@@ -1,0 +1,159 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Default: Midnight Theme (Deep Blue/Slate) */
+    --background: 224 71% 4%;
+    --foreground: 210 20% 98%;
+
+    --card: 224 71% 4%;
+    --card-foreground: 210 20% 98%;
+
+    --popover: 224 71% 4%;
+    --popover-foreground: 210 20% 98%;
+
+    --primary: 263.4 70% 50.4%;
+    /* Purple Accent Default */
+    --primary-foreground: 210 20% 98%;
+
+    --secondary: 215 27.9% 16.9%;
+    --secondary-foreground: 210 20% 98%;
+
+    --muted: 215 27.9% 16.9%;
+    --muted-foreground: 217.9 10.6% 64.9%;
+
+    --accent: 215 27.9% 16.9%;
+    --accent-foreground: 210 20% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 20% 98%;
+
+    --border: 215 27.9% 16.9%;
+    --input: 215 27.9% 16.9%;
+    --ring: 263.4 70% 50.4%;
+
+    --radius: 0.5rem;
+
+    /* Sidebar Defaults */
+    --col-sidebar: 224 71% 4%;
+    --col-sidebar-hover: 224 71% 8%;
+
+    /* Chart Defaults */
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+
+  /* --- COMPLETE THEMES --- */
+
+  /* Ocean: Deep rich blue background, Cyan primary */
+  .theme-ocean {
+    --background: 222 47% 11%;
+    /* #0f172a / Slate-900 like */
+    --foreground: 210 40% 98%;
+    --card: 222 47% 11%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222 47% 11%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 189 94% 43%;
+    /* Cyan */
+    --primary-foreground: 195 90% 10%;
+    --ring: 189 94% 43%;
+    --border: 217 33% 22%;
+    --input: 217 33% 22%;
+  }
+
+  /* Royal: Deep purple background, Pink/Purple primary */
+  .theme-royal {
+    --background: 265 48% 6%;
+    /* Very dark purple */
+    --foreground: 210 40% 98%;
+    --card: 265 48% 6%;
+    --card-foreground: 210 40% 98%;
+
+    --primary: 315 100% 50%;
+    /* Magenta/Pink */
+    --primary-foreground: 210 40% 98%;
+    --ring: 315 100% 50%;
+
+    --border: 265 48% 15%;
+    --input: 265 48% 15%;
+  }
+
+  /* Forest: Dark green background, Emerald primary */
+  .theme-forest {
+    --background: 160 30% 6%;
+    /* Very dark green */
+    --foreground: 210 40% 98%;
+    --card: 160 30% 6%;
+    --card-foreground: 210 40% 98%;
+
+    --primary: 142 76% 36%;
+    /* Emerald */
+    --primary-foreground: 355 100% 97%;
+    --ring: 142 76% 36%;
+
+    --border: 160 30% 15%;
+    --input: 160 30% 15%;
+  }
+
+  /* Sunset: Warm dark background, Orange primary */
+  .theme-sunset {
+    --background: 20 20% 8%;
+    /* Dark warm/brown */
+    --foreground: 210 40% 98%;
+    --card: 20 20% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --primary: 24 95% 53%;
+    /* Orange */
+    --primary-foreground: 60 9% 98%;
+    --ring: 24 95% 53%;
+
+    --border: 20 20% 18%;
+    --input: 20 20% 18%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    /* SF Pro Display fallback stack */
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+
+  /* Utilities for glassmorphism */
+  .glass {
+    @apply bg-background/60 backdrop-blur-xl border-b border-white/10;
+  }
+
+  /* Gradient text utility */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-white via-white/90 to-white/60;
+  }
+}
+
+/* Animations */
+@keyframes shimmery {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
