@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Float, DateTime, Enum, func
+from sqlalchemy import Column, String, Float, Integer, DateTime, Text, Enum, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -22,6 +22,17 @@ class Supplier(Base):
     address = Column(String(500), nullable=True)
     rating = Column(Float, nullable=False, default=4.0)
     status = Column(Enum(SupplierStatus), nullable=False, default=SupplierStatus.active)
+
+    # Enhanced fields
+    contact_person = Column(String(255), nullable=True)
+    website = Column(String(500), nullable=True)
+    payment_terms = Column(String(100), nullable=True)  # e.g. "Net 30", "Net 60"
+    lead_time_days = Column(Integer, nullable=True, default=7)
+    preferred_currency = Column(String(10), nullable=True, default="USD")
+    tax_id = Column(String(100), nullable=True)
+    notes = Column(Text, nullable=True)
+    categories = Column(String(500), nullable=True)  # Comma-separated category names
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

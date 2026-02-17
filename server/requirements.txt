@@ -9,3 +9,15 @@ pydantic
 pydantic-settings
 PyJWT
 cryptography
+
+# AI & LLM
+zhipuai
+sniffio
+scikit-learn
+pandas
+numpy
+
+# Document AI (Wave 4)
+# pytesseract
+# Pillow
+# PyPDF2

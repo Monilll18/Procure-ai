@@ -6,7 +6,8 @@ import os
 from app.routers import (
     products, suppliers, inventory, purchase_orders, approvals,
     analytics, insights, supplier_prices, notifications, audit_logs, budgets,
-    users, settings
+    users, settings, company_config, categories, departments, approval_rules,
+    requisitions, ai
 )
 
 load_dotenv()
@@ -43,6 +44,12 @@ app.include_router(audit_logs.router, prefix="/api/audit-logs", tags=["Audit Log
 app.include_router(budgets.router, prefix="/api/budgets", tags=["Budgets"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
+app.include_router(company_config.router, prefix="/api/company", tags=["Company Config"])
+app.include_router(categories.router, prefix="/api/categories", tags=["Categories"])
+app.include_router(departments.router, prefix="/api/departments", tags=["Departments"])
+app.include_router(approval_rules.router, prefix="/api/approval-rules", tags=["Approval Rules"])
+app.include_router(requisitions.router, prefix="/api/requisitions", tags=["Requisitions"])
+app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
 
 
 @app.get("/", tags=["Health"])

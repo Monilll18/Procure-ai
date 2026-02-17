@@ -1,0 +1,245 @@
+# AI & LLM Integration — Implementation Plan
+
+## Current State
+
+| What Exists | Details |
+|---|---|
+| **Insights Engine** | Simple moving average forecast, reorder alerts, spend anomaly (30% threshold), supplier risk |
+| **Analytics** | SQL aggregations (spend by category, supplier performance, monthly spend) |
+| **AI Dependencies** | None — no ML/LLM libraries installed |
+| **API Keys** | None — [.env](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/.env) has no Groq/Gemini keys |
+
+> [!IMPORTANT]
+> **Pre-requisite:** User must get a free Groq API key from [console.groq.com](https://console.groq.com) and add `GROQ_API_KEY=gsk_...` to [.env](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/.env). Optional: Gemini API key as backup.
+
+---
+
+## Build Order (5 Waves)
+
+```mermaid
+graph LR
+    W1["Wave 1\nLLM Foundation\n+ Chat + NL Requests"] --> W2["Wave 2\nML Models\nForecasting + Anomaly"]
+    W2 --> W3["Wave 3\nSupplier Scoring\n+ LLM Explanation"]
+    W3 --> W4["Wave 4\nDocument AI\nOCR + Email Parsing"]
+    W4 --> W5["Wave 5\nInvoice Match\n+ Fraud Detection"]
+```
+
+---
+
+## Wave 1: LLM Foundation + AI Chat + NL Purchase Requests
+
+**New Dependencies:** `groq`, `google-generativeai` (backup)
+
+---
+
+### LLM Service (Core)
+
+#### [NEW] [llm_service.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/services/llm_service.py)
+
+Central LLM wrapper with Groq primary + Gemini fallback:
+- `async query_llm(prompt, system_prompt, json_mode)` — returns parsed response
+- Auto-retries on rate limit, falls back to Gemini
+- Token usage tracking
+
+---
+
+### Integration 1: Natural Language Purchase Request
+
+#### [NEW] [ai_router.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/routers/ai.py)
+
+Endpoints:
+- `POST /api/ai/parse-request` — NL text → structured PR items with product matching
+- `POST /api/ai/chat` — RAG-powered chat (Integration 8)
+- `POST /api/ai/explain-supplier` — supplier recommendation explanation
+
+#### [MODIFY] [requisitions/page.tsx](file:///Users/commerciax/Desktop/AI_Procurement_sys/client/src/app/(dashboard)/requisitions/page.tsx)
+
+Add "✨ Describe what you need" textarea with AI parse button above line items.
+
+---
+
+### Integration 8: AI Chat Assistant (RAG)
+
+#### [NEW] [ai_chat.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/services/ai_chat.py)
+
+RAG service that:
+1. Classifies user intent (spend query, PO status, supplier lookup, etc.)
+2. Fetches relevant DB data via SQL queries
+3. Sends data + question to LLM for natural language answer
+
+#### [NEW] [AIChatWidget.tsx](file:///Users/commerciax/Desktop/AI_Procurement_sys/client/src/components/AIChatWidget.tsx)
+
+Floating chat bubble (bottom-right) with:
+- Message history, typing indicator
+- Suggested questions based on current page
+- Links to referenced POs/suppliers in responses
+
+#### [MODIFY] [layout.tsx](file:///Users/commerciax/Desktop/AI_Procurement_sys/client/src/app/(dashboard)/layout.tsx)
+
+Add `<AIChatWidget />` globally.
+
+---
+
+## Wave 2: ML Demand Forecasting + Price Anomaly Detection
+
+**New Dependencies:** `prophet`, `scikit-learn`, `pandas`, `numpy`
+
+---
+
+### Integration 2: Prophet Demand Forecasting
+
+#### [MODIFY] [insights_engine.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/services/insights_engine.py)
+
+Replace [generate_forecast()](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/services/insights_engine.py#182-236) (simple moving avg) with Prophet:
+- Per-product forecasting with yearly seasonality
+- 90-day predictions with confidence intervals
+- Automatic reorder date calculation
+
+#### [NEW] [forecast_service.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/services/forecast_service.py)
+
+- `forecast_product(product_id, db)` — trains Prophet on PO history
+- `forecast_all(db)` — batch forecast for all active products
+- `calculate_reorder_date(product_id, db)` — when to order based on stock + forecast
+
+#### [MODIFY] AI Insights frontend
+
+Update forecast charts to show confidence intervals (upper/lower bounds).
+
+---
+
+### Integration 6: Price Anomaly Detection
+
+#### [NEW] [anomaly_service.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/services/anomaly_service.py)
+
+IsolationForest-based price monitoring:
+- `detect_price_anomaly(product_id, new_price, db)` — returns anomaly flag + deviation %
+- `batch_check_prices(db)` — scans all recent prices
+- Hooks into supplier price update/creation endpoints
+
+#### [MODIFY] [supplier_prices.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/routers/supplier_prices.py)
+
+Add anomaly check on price create/update — returns warning if anomalous.
+
+---
+
+## Wave 3: Smart Supplier Scoring + LLM Explanation
+
+---
+
+### Integration 7: Supplier Recommendation
+
+#### [NEW] [supplier_scorer.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/services/supplier_scorer.py)
+
+Weighted scoring algorithm:
+- Price competitiveness (30%): vs market average
+- Delivery reliability (30%): on-time rate from PO history
+- Quality rating (25%): existing DB rating
+- Response time (15%): average lead time
+- `score_supplier(supplier_id, product_id, db)` → composite score 0-10
+- `rank_suppliers_for_product(product_id, db)` → sorted list with scores
+
+#### [MODIFY] [ai_router.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/routers/ai.py)
+
+`POST /api/ai/explain-supplier` — takes ML scores → LLM writes human explanation.
+
+#### [MODIFY] Supplier pages
+
+Show scorecard on supplier detail with radar chart (price/delivery/quality/response).
+
+---
+
+## Wave 4: Document AI (OCR + Email Parsing)
+
+**New Dependencies:** `pytesseract`, `Pillow`, `python-multipart`, `PyPDF2`
+
+---
+
+### Integration 3: Price Sheet OCR
+
+#### [NEW] [ocr_service.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/services/ocr_service.py)
+
+- `extract_text_from_pdf(file)` — PDF → raw text (Tesseract + PyPDF2)
+- `extract_text_from_image(file)` — image → raw text
+- `parse_price_sheet(raw_text, product_catalog)` — LLM extracts structured prices
+
+#### [NEW] [documents.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/routers/documents.py)
+
+- `POST /api/documents/upload-price-sheet` — upload + OCR + LLM parse
+- `POST /api/documents/confirm-prices` — human confirms → updates supplier prices
+- Returns extracted items with confidence scores for review
+
+### Integration 5: Supplier Email Parsing
+
+#### [MODIFY] [ai_router.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/routers/ai.py)
+
+- `POST /api/ai/parse-email` — raw email text → structured quote data
+- Matches products to catalog, extracts prices/terms/availability
+
+---
+
+## Wave 5: Invoice Matching + Fraud Detection
+
+---
+
+### Integration 9: Invoice 3-Way Matching
+
+#### [NEW] [invoice_service.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/services/invoice_service.py)
+
+- `match_invoice_to_po(invoice_data, po_id, db)` — PO vs delivery vs invoice
+- Returns: match status, discrepancies, recommended action
+- OCR integration for scanned invoices
+
+### Integration 10: Spend Anomaly & Fraud Detection
+
+#### [NEW] [fraud_detection.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/services/fraud_detection.py)
+
+Pattern detectors:
+- **Split orders**: same user, same supplier, amounts below approval limit
+- **New supplier + large order**: first order exceeds threshold
+- **Off-hours activity**: POs approved on weekends/nights
+- **Unusual spending**: department spends 0 for months then large spike
+- `scan_for_fraud(db)` → list of flagged patterns with severity
+
+#### [MODIFY] [insights_engine.py](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/services/insights_engine.py)
+
+Add fraud alerts to [generate_insights()](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/services/insights_engine.py#16-29).
+
+---
+
+## Environment & Dependencies
+
+### [MODIFY] [.env](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/.env) — add:
+```
+GROQ_API_KEY=gsk_...          # Required (get from console.groq.com)
+GEMINI_API_KEY=...             # Optional backup
+```
+
+### [MODIFY] [requirements.txt](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/requirements.txt) — add:
+```
+groq
+google-generativeai
+prophet
+scikit-learn
+pandas
+numpy
+pytesseract
+Pillow
+python-multipart
+PyPDF2
+```
+
+---
+
+## Verification Plan
+
+### Per-Wave Testing
+| Wave | Test |
+|---|---|
+| 1 | Chat with assistant, parse NL purchase request, verify structured output |
+| 2 | Compare Prophet forecast vs simple avg, test anomaly on extreme price |
+| 3 | Score known suppliers, verify ranking matches expectations |
+| 4 | Upload sample PDF price sheet, verify extracted items |
+| 5 | Create mismatched invoice, verify 3-way match flags it |
+
+### Swagger UI
+All new endpoints testable at `http://localhost:8000/docs`

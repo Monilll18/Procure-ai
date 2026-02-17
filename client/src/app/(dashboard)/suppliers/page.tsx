@@ -12,9 +12,9 @@ import {
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Search, Truck, Star, Phone, Mail, MapPin, Loader2, Plus } from "lucide-react";
+import { Search, Truck, Star, Phone, Mail, MapPin, Loader2, Plus, Sparkles } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { getSuppliers, createSupplier, type Supplier } from "@/lib/api";
+import { getSuppliers, createSupplier, aiScoreSupplier, type Supplier } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
 
 export default function SuppliersPage() {
@@ -29,6 +29,8 @@ export default function SuppliersPage() {
     const [formData, setFormData] = useState({
         name: "", email: "", phone: "", address: "", rating: 4.0, status: "active" as const,
     });
+    const [aiScore, setAiScore] = useState<any>(null);
+    const [aiScoreLoading, setAiScoreLoading] = useState(false);
 
     const loadSuppliers = () => {
         setLoading(true);
@@ -39,6 +41,18 @@ export default function SuppliersPage() {
     };
 
     useEffect(() => { loadSuppliers(); }, []);
+
+    // Fetch AI score when supplier is viewed
+    useEffect(() => {
+        if (viewSupplier) {
+            setAiScore(null);
+            setAiScoreLoading(true);
+            aiScoreSupplier(viewSupplier.id)
+                .then(setAiScore)
+                .catch(() => setAiScore(null))
+                .finally(() => setAiScoreLoading(false));
+        }
+    }, [viewSupplier]);
 
     const filtered = suppliers.filter(
         (s) =>
@@ -125,10 +139,10 @@ export default function SuppliersPage() {
                                             <Badge
                                                 variant="secondary"
                                                 className={`text-[10px] h-5 px-1.5 mt-0.5 ${supplier.status === "active"
-                                                        ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                                                        : supplier.status === "inactive"
-                                                            ? "bg-gray-100 text-gray-600"
-                                                            : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                                                    ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+                                                    : supplier.status === "inactive"
+                                                        ? "bg-gray-100 text-gray-600"
+                                                        : "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                                                     }`}
                                             >
                                                 {supplier.status}
@@ -282,6 +296,55 @@ export default function SuppliersPage() {
                             </div>
                             <div className="text-xs text-muted-foreground border-t pt-3">
                                 Added on {new Date(viewSupplier.created_at).toLocaleDateString()}
+                            </div>
+
+                            {/* AI Score Section */}
+                            <div className="border-t pt-3">
+                                <p className="text-sm font-semibold flex items-center gap-2 mb-3">
+                                    <Sparkles className="h-4 w-4 text-purple-500" /> AI Supplier Score
+                                </p>
+                                {aiScoreLoading ? (
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                        <Loader2 className="h-4 w-4 animate-spin" /> Calculating score...
+                                    </div>
+                                ) : aiScore ? (
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-2xl font-bold">
+                                                {typeof aiScore.total_score === 'number' ? aiScore.total_score.toFixed(1) : '—'}
+                                            </span>
+                                            <span className="text-xs text-muted-foreground">/ 10</span>
+                                        </div>
+                                        {aiScore.breakdown && (
+                                            <div className="space-y-2">
+                                                {[
+                                                    { key: 'price', label: 'Price', color: 'bg-blue-500' },
+                                                    { key: 'delivery', label: 'Delivery', color: 'bg-green-500' },
+                                                    { key: 'quality', label: 'Quality', color: 'bg-purple-500' },
+                                                    { key: 'response', label: 'Response', color: 'bg-amber-500' },
+                                                ].map(({ key, label, color }) => {
+                                                    const val = aiScore.breakdown[key]?.score;
+                                                    return (
+                                                        <div key={key} className="flex items-center gap-2">
+                                                            <span className="text-xs text-muted-foreground w-16">{label}</span>
+                                                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                                                <div
+                                                                    className={`h-full rounded-full ${color}`}
+                                                                    style={{ width: `${((val || 0) / 10) * 100}%` }}
+                                                                />
+                                                            </div>
+                                                            <span className="text-xs font-mono">
+                                                                {typeof val === 'number' ? val.toFixed(1) : '—'}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-muted-foreground">Score unavailable — not enough data.</p>
+                                )}
                             </div>
                         </div>
                     )}

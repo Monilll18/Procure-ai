@@ -9,6 +9,11 @@ from app.models.audit_log import AuditLog
 from app.models.notification import Notification
 from app.models.user import User
 from app.models.budget import Budget
+from app.models.company_config import CompanyConfig
+from app.models.category import Category
+from app.models.department import Department
+from app.models.approval_rule import ApprovalRule
+from app.models.purchase_requisition import PurchaseRequisition, PRLineItem
 
 __all__ = [
     "Product",
@@ -23,4 +28,10 @@ __all__ = [
     "Notification",
     "User",
     "Budget",
+    "CompanyConfig",
+    "Category",
+    "Department",
+    "ApprovalRule",
+    "PurchaseRequisition",
+    "PRLineItem",
 ]

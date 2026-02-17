@@ -1,16 +1,20 @@
 """
 AI Insights Engine — generates smart procurement recommendations.
-Analyzes inventory levels, spending patterns, and supplier risk.
+Analyzes inventory levels, spending patterns, supplier risk,
+price anomalies (ML), and fraud patterns.
 """
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
+import logging
 
 from app.models.product import Product
 from app.models.supplier import Supplier
 from app.models.inventory import Inventory
 from app.models.purchase_order import PurchaseOrder, POLineItem, POStatus
+
+logger = logging.getLogger(__name__)
 
 
 def generate_insights(db: Session) -> List[Dict[str, Any]]:
@@ -20,6 +24,30 @@ def generate_insights(db: Session) -> List[Dict[str, Any]]:
     insights.extend(_reorder_alerts(db))
     insights.extend(_spend_anomalies(db))
     insights.extend(_supplier_risk_alerts(db))
+
+    # ML-powered insights (graceful fallback if sklearn not available)
+    try:
+        from app.services.anomaly_service import batch_check_prices, detect_fraud_patterns
+
+        # Price anomalies from IsolationForest
+        price_anomalies = batch_check_prices(db)
+        for pa in price_anomalies:
+            insights.append({
+                "type": "price_anomaly",
+                "severity": "warning",
+                "title": f"Price Anomaly: {pa.get('product_name', 'Unknown')}",
+                "description": pa.get("reason", "Unusual price detected"),
+                "impact": "High" if abs(pa.get("deviation_pct", 0)) > 30 else "Medium",
+                "action": "Review Price",
+                "metadata": pa,
+            })
+
+        # Fraud pattern detection
+        fraud_alerts = detect_fraud_patterns(db)
+        insights.extend(fraud_alerts)
+
+    except Exception as e:
+        logger.warning(f"ML insights unavailable: {e}")
 
     # Sort by severity: critical > warning > info
     severity_order = {"critical": 0, "warning": 1, "info": 2}

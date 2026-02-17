@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
+from dotenv import load_dotenv
 
 from app.database import get_db
 from app.models.user import User, UserRole
@@ -36,7 +37,13 @@ def resolve_role_from_env(email: str) -> str:
     """
     Match an email against env-defined role lists.
     Priority: admin > manager > procurement_officer > approver > viewer.
+
+    Re-reads .env on every call so that admin can update role mappings
+    without restarting the server.
     """
+    # Reload .env to pick up any changes made since server started
+    load_dotenv(override=True)
+
     email_lower = email.strip().lower()
 
     if email_lower in _parse_emails("ADMIN_EMAILS"):
@@ -60,6 +67,7 @@ def _user_to_response(u: User) -> UserResponse:
         email=u.email,
         full_name=u.full_name,
         role=u.role,
+        role_source=getattr(u, 'role_source', 'env'),
         department=u.department,
         approval_limit=u.approval_limit or 0,
         is_active=u.is_active,
@@ -127,31 +135,32 @@ async def get_my_profile(
     clerk_id: str = Depends(get_current_user),
 ):
     """
-    Get the current user's profile.
-    On first login, auto-creates a user record with the role resolved from .env.
-    The frontend passes the user's Clerk email & name as query params on first call.
+    Get the current user's profile. Fully dynamic role assignment:
 
-    Handles three scenarios:
-    1. User already exists by clerk_id → return profile (sync email/name if changed)
-    2. User exists by email but different clerk_id (seed/admin-created) → link to real Clerk account
-    3. Brand new user → create with env-based role
+    ROLE PRIORITY:
+      1. Admin override (role_source='admin') → never changed by env
+      2. .env mapping  (role_source='env')    → re-checked every login
+      3. Default viewer (email not in any list)
+
+    SCENARIOS:
+      A. clerk_id match      → existing user, re-sync role if source='env'
+      B. email match only     → pre-created/seeded user, link to real Clerk account
+      C. no match at all      → brand new user, resolve role from .env
     """
     user = db.query(User).filter(User.clerk_id == clerk_id).first()
 
+    # ── Scenario B: email match but different clerk_id ──
     if not user and email:
-        # Check if a user was pre-created (by seed or admin) with this email
-        # but has a different clerk_id (e.g. "seed_admin" or "pending_xxx")
         user = db.query(User).filter(User.email == email).first()
         if user:
-            # Link the existing record to the real Clerk account
             user.clerk_id = clerk_id
             if full_name and user.full_name != full_name:
                 user.full_name = full_name
             db.commit()
             db.refresh(user)
 
+    # ── Scenario C: brand new user ──
     if not user:
-        # Brand new user — resolve role from .env by email
         user_email = email or f"{clerk_id}@pending.sync"
         role = resolve_role_from_env(user_email)
 
@@ -160,23 +169,38 @@ async def get_my_profile(
             email=user_email,
             full_name=full_name or "New User",
             role=role,
+            role_source="env",
             is_active=True,
         )
         db.add(user)
         db.commit()
         db.refresh(user)
-    else:
-        # Sync email/name from Clerk if provided and changed
-        changed = False
-        if email and user.email != email:
-            user.email = email
+        return _user_to_response(user)
+
+    # ── Scenario A: existing user — sync and re-check role ──
+    changed = False
+
+    # Sync email/name from Clerk
+    if email and user.email != email:
+        user.email = email
+        changed = True
+    if full_name and user.full_name != full_name:
+        user.full_name = full_name
+        changed = True
+
+    # Re-resolve role from .env — but ONLY if role was NOT set by admin
+    role_source = getattr(user, 'role_source', 'env') or 'env'
+    if role_source != "admin":
+        current_email = email or user.email
+        env_role = resolve_role_from_env(current_email)
+        if user.role != env_role:
+            user.role = env_role
+            user.role_source = "env"
             changed = True
-        if full_name and user.full_name != full_name:
-            user.full_name = full_name
-            changed = True
-        if changed:
-            db.commit()
-            db.refresh(user)
+
+    if changed:
+        db.commit()
+        db.refresh(user)
 
     return _user_to_response(user)
 
@@ -240,6 +264,7 @@ async def create_user(
         email=user_data.email,
         full_name=user_data.full_name,
         role=user_data.role,
+        role_source="admin",  # Admin-created user — env won't override this
         department=user_data.department,
         approval_limit=user_data.approval_limit,
         is_active=True,
@@ -274,6 +299,7 @@ async def update_user(
         if updates.role not in valid_roles:
             raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid_roles}")
         user.role = updates.role
+        user.role_source = "admin"  # Mark as admin-set — env won't override
     if updates.department is not None:
         user.department = updates.department
     if updates.approval_limit is not None:

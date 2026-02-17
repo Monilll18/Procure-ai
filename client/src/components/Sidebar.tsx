@@ -15,6 +15,8 @@ import {
     Brain,
     Menu,
     ChevronLeft,
+    FolderTree,
+    Building2,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";

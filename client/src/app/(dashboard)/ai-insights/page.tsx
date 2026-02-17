@@ -8,17 +8,30 @@ import { Badge } from "@/components/ui/badge";
 import {
     Sparkles, AlertTriangle, ArrowRight, TrendingDown, TrendingUp,
     Package, DollarSign, ShieldAlert, Loader2, RefreshCw,
+    Search, Shield, Zap, Eye, BarChart2,
 } from "lucide-react";
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, Legend,
 } from "recharts";
-import { getInsights, getForecast, Insight, ForecastPoint } from "@/lib/api";
+import { getInsights, getForecast, Insight, ForecastPoint, aiFraudScan, aiGetPriceAnomalies } from "@/lib/api";
+
+// ─── Tab config ──────────────────────────────────────────────
+const TABS = [
+    { id: "overview", label: "Overview", icon: BarChart2 },
+    { id: "fraud", label: "Fraud Detection", icon: Shield },
+    { id: "anomalies", label: "Price Anomalies", icon: Search },
+] as const;
+type TabId = typeof TABS[number]["id"];
 
 export default function AIInsightsPage() {
     const [insights, setInsights] = useState<Insight[]>([]);
     const [forecast, setForecast] = useState<ForecastPoint[]>([]);
+    const [fraudAlerts, setFraudAlerts] = useState<any[]>([]);
+    const [priceAnomalies, setPriceAnomalies] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [mlLoading, setMlLoading] = useState(false);
+    const [activeTab, setActiveTab] = useState<TabId>("overview");
 
     const loadData = () => {
         setLoading(true);
@@ -31,7 +44,24 @@ export default function AIInsightsPage() {
             .finally(() => setLoading(false));
     };
 
-    useEffect(() => { loadData(); }, []);
+    const loadMLData = () => {
+        setMlLoading(true);
+        Promise.all([
+            aiFraudScan().catch(() => []),
+            aiGetPriceAnomalies().catch(() => []),
+        ])
+            .then(([fraud, anomalies]) => {
+                setFraudAlerts(fraud);
+                setPriceAnomalies(anomalies);
+            })
+            .catch(console.error)
+            .finally(() => setMlLoading(false));
+    };
+
+    useEffect(() => {
+        loadData();
+        loadMLData();
+    }, []);
 
     if (loading) {
         return (
@@ -45,6 +75,7 @@ export default function AIInsightsPage() {
     const reorderAlerts = insights.filter((i) => i.type === "reorder");
     const spendAnomalies = insights.filter((i) => i.type === "spend_anomaly");
     const supplierRisks = insights.filter((i) => i.type === "supplier_risk");
+    const mlPriceAlerts = insights.filter((i) => i.type === "price_anomaly");
 
     const criticalCount = insights.filter((i) => i.severity === "critical").length;
     const warningCount = insights.filter((i) => i.severity === "warning").length;
@@ -56,10 +87,10 @@ export default function AIInsightsPage() {
                     <h2 className="text-3xl font-bold tracking-tight flex items-center gap-2">
                         <Sparkles className="h-8 w-8 text-purple-600" /> AI Insights
                     </h2>
-                    <p className="text-muted-foreground">Predictive analytics and smart recommendations for your procurement.</p>
+                    <p className="text-muted-foreground">ML-powered monitoring, fraud detection, and predictive analytics.</p>
                 </div>
-                <Button variant="outline" onClick={loadData} disabled={loading}>
-                    <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} /> Refresh
+                <Button variant="outline" onClick={() => { loadData(); loadMLData(); }} disabled={loading || mlLoading}>
+                    <RefreshCw className={`mr-2 h-4 w-4 ${(loading || mlLoading) ? "animate-spin" : ""}`} /> Refresh
                 </Button>
             </div>
 
@@ -68,106 +99,236 @@ export default function AIInsightsPage() {
                 <Badge variant="destructive" className="px-3 py-1.5 text-sm">
                     {criticalCount} Critical
                 </Badge>
-                <Badge variant="secondary" className="px-3 py-1.5 text-sm border-yellow-200 bg-yellow-50 text-yellow-700">
+                <Badge variant="secondary" className="px-3 py-1.5 text-sm border-yellow-200 bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700">
                     {warningCount} Warnings
                 </Badge>
                 <Badge variant="secondary" className="px-3 py-1.5 text-sm">
                     {insights.length} Total Insights
                 </Badge>
+                {fraudAlerts.length > 0 && (
+                    <Badge className="px-3 py-1.5 text-sm bg-red-500/10 text-red-500 border border-red-500/30">
+                        <Shield className="h-3 w-3 mr-1" /> {fraudAlerts.length} Fraud Alerts
+                    </Badge>
+                )}
+                {priceAnomalies.length > 0 && (
+                    <Badge className="px-3 py-1.5 text-sm bg-purple-500/10 text-purple-500 border border-purple-500/30">
+                        <Search className="h-3 w-3 mr-1" /> {priceAnomalies.length} Price Anomalies
+                    </Badge>
+                )}
             </div>
 
-            {/* Demand Forecast Chart */}
-            {forecast.length > 0 && (
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Demand Forecast</CardTitle>
-                        <CardDescription>Historical spend with AI-predicted trend for next 3 months.</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="h-[350px] w-full">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={forecast}>
-                                    <defs>
-                                        <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8} />
-                                            <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
-                                        </linearGradient>
-                                        <linearGradient id="colorPredicted" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#82ca9d" stopOpacity={0.8} />
-                                            <stop offset="95%" stopColor="#82ca9d" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <XAxis dataKey="month" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                                    <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} />
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <Tooltip formatter={(v) => v != null ? [`$${Number(v).toLocaleString()}`, ""] : ["N/A", ""]} />
-                                    <Legend />
-                                    <Area type="monotone" dataKey="actual" stroke="#8884d8" fillOpacity={1} fill="url(#colorActual)" name="Actual Spend" />
-                                    <Area type="monotone" dataKey="predicted" stroke="#82ca9d" fillOpacity={1} fill="url(#colorPredicted)" name="AI Prediction" strokeDasharray="5 5" />
-                                </AreaChart>
-                            </ResponsiveContainer>
+            {/* Tab Navigation */}
+            <div className="flex gap-1 p-1 rounded-lg bg-muted/50 w-fit">
+                {TABS.map((tab) => {
+                    const Icon = tab.icon;
+                    const isActive = activeTab === tab.id;
+                    return (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`
+                                flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all
+                                ${isActive
+                                    ? "bg-background shadow-sm text-foreground"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                                }
+                            `}
+                        >
+                            <Icon className="h-4 w-4" />
+                            {tab.label}
+                            {tab.id === "fraud" && fraudAlerts.length > 0 && (
+                                <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-red-500 text-white">
+                                    {fraudAlerts.length}
+                                </span>
+                            )}
+                            {tab.id === "anomalies" && priceAnomalies.length > 0 && (
+                                <span className="ml-1 px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-purple-500 text-white">
+                                    {priceAnomalies.length}
+                                </span>
+                            )}
+                        </button>
+                    );
+                })}
+            </div>
+
+            {/* ─── Tab: Overview ─────────────────────────────────── */}
+            {activeTab === "overview" && (
+                <>
+                    {/* Demand Forecast Chart */}
+                    {forecast.length > 0 && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Demand Forecast</CardTitle>
+                                <CardDescription>Historical spend with AI-predicted trend for next 3 months.</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="h-[350px] w-full">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={forecast}>
+                                            <defs>
+                                                <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8} />
+                                                    <stop offset="95%" stopColor="#8884d8" stopOpacity={0} />
+                                                </linearGradient>
+                                                <linearGradient id="colorPredicted" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="#82ca9d" stopOpacity={0.8} />
+                                                    <stop offset="95%" stopColor="#82ca9d" stopOpacity={0} />
+                                                </linearGradient>
+                                            </defs>
+                                            <XAxis dataKey="month" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
+                                            <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} />
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                            <Tooltip formatter={(v) => v != null ? [`$${Number(v).toLocaleString()}`, ""] : ["N/A", ""]} />
+                                            <Legend />
+                                            <Area type="monotone" dataKey="actual" stroke="#8884d8" fillOpacity={1} fill="url(#colorActual)" name="Actual Spend" />
+                                            <Area type="monotone" dataKey="predicted" stroke="#82ca9d" fillOpacity={1} fill="url(#colorPredicted)" name="AI Prediction" strokeDasharray="5 5" />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* Insight Sections */}
+                    {reorderAlerts.length > 0 && (
+                        <section>
+                            <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                                <Package className="h-5 w-5 text-orange-500" /> Reorder Alerts ({reorderAlerts.length})
+                            </h3>
+                            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                {reorderAlerts.map((insight, i) => (
+                                    <InsightCard key={i} insight={insight} />
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {spendAnomalies.length > 0 && (
+                        <section>
+                            <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                                <DollarSign className="h-5 w-5 text-blue-500" /> Spend Anomalies ({spendAnomalies.length})
+                            </h3>
+                            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                {spendAnomalies.map((insight, i) => (
+                                    <InsightCard key={i} insight={insight} />
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {supplierRisks.length > 0 && (
+                        <section>
+                            <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                                <ShieldAlert className="h-5 w-5 text-red-500" /> Supplier Risk ({supplierRisks.length})
+                            </h3>
+                            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                {supplierRisks.map((insight, i) => (
+                                    <InsightCard key={i} insight={insight} />
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {mlPriceAlerts.length > 0 && (
+                        <section>
+                            <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                                <Search className="h-5 w-5 text-purple-500" /> ML Price Alerts ({mlPriceAlerts.length})
+                            </h3>
+                            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                                {mlPriceAlerts.map((insight, i) => (
+                                    <InsightCard key={i} insight={insight} />
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {insights.length === 0 && (
+                        <Card className="p-8 text-center">
+                            <p className="text-muted-foreground">🎉 No issues found! All systems are operating normally.</p>
+                        </Card>
+                    )}
+                </>
+            )}
+
+            {/* ─── Tab: Fraud Detection ─────────────────────────── */}
+            {activeTab === "fraud" && (
+                <div className="space-y-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Shield className="h-5 w-5 text-red-500" /> Fraud Pattern Scanner
+                            </CardTitle>
+                            <CardDescription>
+                                ML detects: split orders, unusually large orders with new suppliers, off-hours activity.
+                            </CardDescription>
+                        </CardHeader>
+                    </Card>
+
+                    {mlLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                            <Loader2 className="h-6 w-6 animate-spin text-red-500 mr-2" />
+                            <span className="text-muted-foreground">Scanning for fraud patterns...</span>
                         </div>
-                    </CardContent>
-                </Card>
+                    ) : fraudAlerts.length === 0 ? (
+                        <Card className="p-8 text-center border-green-500/30 bg-green-500/5">
+                            <p className="text-green-600 dark:text-green-400 font-medium">✅ No suspicious patterns detected. All clear!</p>
+                        </Card>
+                    ) : (
+                        <div className="grid gap-4 md:grid-cols-2">
+                            {fraudAlerts.map((alert, i) => (
+                                <FraudAlertCard key={i} alert={alert} />
+                            ))}
+                        </div>
+                    )}
+                </div>
             )}
 
-            {/* Insight Sections */}
-            {reorderAlerts.length > 0 && (
-                <section>
-                    <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                        <Package className="h-5 w-5 text-orange-500" /> Reorder Alerts ({reorderAlerts.length})
-                    </h3>
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {reorderAlerts.map((insight, i) => (
-                            <InsightCard key={i} insight={insight} />
-                        ))}
-                    </div>
-                </section>
-            )}
+            {/* ─── Tab: Price Anomalies ─────────────────────────── */}
+            {activeTab === "anomalies" && (
+                <div className="space-y-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Search className="h-5 w-5 text-purple-500" /> IsolationForest Price Analyzer
+                            </CardTitle>
+                            <CardDescription>
+                                ML scans all recent prices and flags statistical outliers using IsolationForest.
+                            </CardDescription>
+                        </CardHeader>
+                    </Card>
 
-            {spendAnomalies.length > 0 && (
-                <section>
-                    <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                        <DollarSign className="h-5 w-5 text-blue-500" /> Spend Anomalies ({spendAnomalies.length})
-                    </h3>
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {spendAnomalies.map((insight, i) => (
-                            <InsightCard key={i} insight={insight} />
-                        ))}
-                    </div>
-                </section>
-            )}
-
-            {supplierRisks.length > 0 && (
-                <section>
-                    <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                        <ShieldAlert className="h-5 w-5 text-red-500" /> Supplier Risk ({supplierRisks.length})
-                    </h3>
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                        {supplierRisks.map((insight, i) => (
-                            <InsightCard key={i} insight={insight} />
-                        ))}
-                    </div>
-                </section>
-            )}
-
-            {insights.length === 0 && (
-                <Card className="p-8 text-center">
-                    <p className="text-muted-foreground">🎉 No issues found! All systems are operating normally.</p>
-                </Card>
+                    {mlLoading ? (
+                        <div className="flex items-center justify-center py-12">
+                            <Loader2 className="h-6 w-6 animate-spin text-purple-500 mr-2" />
+                            <span className="text-muted-foreground">Analyzing price patterns...</span>
+                        </div>
+                    ) : priceAnomalies.length === 0 ? (
+                        <Card className="p-8 text-center border-green-500/30 bg-green-500/5">
+                            <p className="text-green-600 dark:text-green-400 font-medium">✅ All prices within normal range. No anomalies detected.</p>
+                        </Card>
+                    ) : (
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                            {priceAnomalies.map((anomaly, i) => (
+                                <PriceAnomalyCard key={i} anomaly={anomaly} />
+                            ))}
+                        </div>
+                    )}
+                </div>
             )}
         </div>
     );
 }
 
+// ─── Insight Card (existing alerts) ─────────────────────────────
 function InsightCard({ insight }: { insight: Insight }) {
     const router = useRouter();
-    const colorMap = {
-        reorder: { border: "border-l-orange-500", badge: "border-orange-200 text-orange-700 bg-orange-50", label: "Reorder", route: "/purchase-orders" },
-        spend_anomaly: { border: "border-l-blue-500", badge: "border-blue-200 text-blue-700 bg-blue-50", label: "Spend Alert", route: "/analytics" },
-        supplier_risk: { border: "border-l-red-500", badge: "border-red-200 text-red-700 bg-red-50", label: "Risk Alert", route: "/suppliers" },
+    const colorMap: Record<string, { border: string; badge: string; label: string; route: string }> = {
+        reorder: { border: "border-l-orange-500", badge: "border-orange-200 text-orange-700 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-300", label: "Reorder", route: "/purchase-orders" },
+        spend_anomaly: { border: "border-l-blue-500", badge: "border-blue-200 text-blue-700 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-300", label: "Spend Alert", route: "/analytics" },
+        supplier_risk: { border: "border-l-red-500", badge: "border-red-200 text-red-700 bg-red-50 dark:bg-red-900/30 dark:text-red-300", label: "Risk Alert", route: "/suppliers" },
+        price_anomaly: { border: "border-l-purple-500", badge: "border-purple-200 text-purple-700 bg-purple-50 dark:bg-purple-900/30 dark:text-purple-300", label: "Price Anomaly", route: "/ai-insights" },
     };
-    const style = colorMap[insight.type];
+    const style = colorMap[insight.type] || colorMap["spend_anomaly"];
 
     return (
         <Card className={`hover:shadow-md transition-shadow border-l-4 ${style.border}`}>
@@ -187,6 +348,102 @@ function InsightCard({ insight }: { insight: Insight }) {
                     {insight.action}
                     <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
                 </Button>
+            </CardContent>
+        </Card>
+    );
+}
+
+// ─── Fraud Alert Card ───────────────────────────────────────────
+function FraudAlertCard({ alert }: { alert: any }) {
+    const typeConfig: Record<string, { icon: any; color: string; bgColor: string }> = {
+        split_order: { icon: AlertTriangle, color: "text-amber-500", bgColor: "bg-amber-500/10" },
+        new_supplier_large_order: { icon: Shield, color: "text-red-500", bgColor: "bg-red-500/10" },
+        off_hours: { icon: Eye, color: "text-blue-500", bgColor: "bg-blue-500/10" },
+    };
+    const config = typeConfig[alert.type] || typeConfig["new_supplier_large_order"];
+    const Icon = config.icon;
+
+    return (
+        <Card className="hover:shadow-md transition-shadow border border-red-500/20">
+            <CardHeader className="pb-3">
+                <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${config.bgColor}`}>
+                        <Icon className={`h-5 w-5 ${config.color}`} />
+                    </div>
+                    <div className="flex-1">
+                        <Badge variant="outline" className={`text-xs ${alert.severity === "critical" ? "border-red-300 text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-300" : "border-amber-300 text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300"}`}>
+                            {alert.severity === "critical" ? "🔴 Critical" : "🟡 Warning"}
+                        </Badge>
+                    </div>
+                </div>
+                <CardTitle className="text-base mt-2">{alert.title}</CardTitle>
+            </CardHeader>
+            <CardContent>
+                <p className="text-sm text-muted-foreground mb-3">{alert.description}</p>
+                {alert.metadata && (
+                    <div className="text-xs space-y-1 p-3 rounded-lg bg-muted/50">
+                        {alert.metadata.supplier && (
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">Supplier</span>
+                                <span className="font-medium">{alert.metadata.supplier}</span>
+                            </div>
+                        )}
+                        {alert.metadata.po_number && (
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">PO</span>
+                                <span className="font-mono font-medium">{alert.metadata.po_number}</span>
+                            </div>
+                        )}
+                        {alert.metadata.amount && (
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">Amount</span>
+                                <span className="font-medium text-red-500">${Number(alert.metadata.amount).toLocaleString()}</span>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+// ─── Price Anomaly Card ─────────────────────────────────────────
+function PriceAnomalyCard({ anomaly }: { anomaly: any }) {
+    const deviation = anomaly.deviation_pct || 0;
+    const isHigh = deviation > 0;
+
+    return (
+        <Card className="hover:shadow-md transition-shadow border border-purple-500/20">
+            <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                    <Badge variant="outline" className="border-purple-300 text-purple-600 bg-purple-50 dark:bg-purple-900/30 dark:text-purple-300">
+                        <Search className="h-3 w-3 mr-1" /> Anomaly
+                    </Badge>
+                    <div className={`flex items-center gap-1 text-sm font-semibold ${isHigh ? "text-red-500" : "text-green-500"}`}>
+                        {isHigh ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                        {Math.abs(deviation).toFixed(1)}%
+                    </div>
+                </div>
+                <CardTitle className="text-base mt-2">{anomaly.product_name || "Unknown Product"}</CardTitle>
+            </CardHeader>
+            <CardContent>
+                <p className="text-sm text-muted-foreground mb-3">{anomaly.reason || "Unusual price detected by IsolationForest model."}</p>
+                <div className="text-xs space-y-1 p-3 rounded-lg bg-muted/50">
+                    <div className="flex justify-between">
+                        <span className="text-muted-foreground">New Price</span>
+                        <span className="font-medium">${Number(anomaly.new_price || 0).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-muted-foreground">Historical Avg</span>
+                        <span className="font-medium">${Number(anomaly.historical_avg || 0).toLocaleString()}</span>
+                    </div>
+                    {anomaly.confidence != null && (
+                        <div className="flex justify-between">
+                            <span className="text-muted-foreground">Confidence</span>
+                            <span className="font-medium">{(anomaly.confidence * 100).toFixed(0)}%</span>
+                        </div>
+                    )}
+                </div>
             </CardContent>
         </Card>
     );

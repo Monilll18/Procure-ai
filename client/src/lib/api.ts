@@ -220,7 +220,7 @@ export const getAnalyticsSummary = () =>
 // ─── AI Insights ─────────────────────────────────────────────────────
 
 export interface Insight {
-    type: "reorder" | "spend_anomaly" | "supplier_risk";
+    type: "reorder" | "spend_anomaly" | "supplier_risk" | "price_anomaly";
     severity: "critical" | "warning" | "info";
     title: string;
     description: string;
@@ -348,3 +348,323 @@ export const getSystemSettings = () =>
 
 export const updateSystemSettings = (data: Partial<SystemSettings>, token: string) =>
     apiFetch<SystemSettings>("/api/settings/", { method: "PUT", body: JSON.stringify(data) }, token);
+
+
+// ─── Company Config ─────────────────────────────────────────
+
+export interface CompanyConfig {
+    id: number;
+    company_name: string;
+    industry: string;
+    company_size: string;
+    base_currency: string;
+    fiscal_year_start: number;
+    tax_id?: string;
+    address?: string;
+    logo_url?: string;
+    setup_completed: boolean;
+    setup_step: number;
+    expiry_tracking: boolean;
+    batch_tracking: boolean;
+    serial_tracking: boolean;
+}
+
+export interface IndustryOption {
+    id: string;
+    name: string;
+    description: string;
+}
+
+export const getCompanyConfig = () =>
+    apiFetch<CompanyConfig>("/api/company/");
+
+export const updateCompanyConfig = (data: Partial<CompanyConfig>) =>
+    apiFetch<CompanyConfig>("/api/company/", { method: "PUT", body: JSON.stringify(data) });
+
+export const getIndustries = () =>
+    apiFetch<{ industries: IndustryOption[] }>("/api/company/industries");
+
+export const getIndustryTemplate = (industry: string) =>
+    apiFetch<{ industry: string; categories: any[] }>(`/api/company/templates/${industry}`);
+
+export const applyIndustryTemplate = (industry: string) =>
+    apiFetch<{ message: string; categories_created: number }>(`/api/company/apply-template/${industry}`, { method: "POST" });
+
+
+// ─── Categories ─────────────────────────────────────────────
+
+export interface Category {
+    id: string;
+    name: string;
+    slug: string;
+    description?: string;
+    icon?: string;
+    parent_id?: string;
+    sort_order: number;
+    is_active: boolean;
+    industry_template?: string;
+    children: Category[];
+}
+
+export const getCategories = () =>
+    apiFetch<Category[]>("/api/categories/");
+
+export const getCategoryTree = () =>
+    apiFetch<Category[]>("/api/categories/tree");
+
+export const createCategory = (data: Partial<Category>) =>
+    apiFetch<Category>("/api/categories/", { method: "POST", body: JSON.stringify(data) });
+
+export const updateCategory = (id: string, data: Partial<Category>) =>
+    apiFetch<Category>(`/api/categories/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+
+export const deleteCategory = (id: string) =>
+    apiFetch<{ message: string }>(`/api/categories/${id}`, { method: "DELETE" });
+
+
+// ─── Departments ────────────────────────────────────────────
+
+export interface DepartmentData {
+    id: string;
+    name: string;
+    code?: string;
+    description?: string;
+    annual_budget: number;
+    monthly_budget: number;
+    manager_id?: string;
+    is_active: boolean;
+}
+
+export const getDepartments = () =>
+    apiFetch<DepartmentData[]>("/api/departments/");
+
+export const createDepartment = (data: Partial<DepartmentData>) =>
+    apiFetch<DepartmentData>("/api/departments/", { method: "POST", body: JSON.stringify(data) });
+
+export const updateDepartment = (id: string, data: Partial<DepartmentData>) =>
+    apiFetch<DepartmentData>(`/api/departments/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+
+export const deleteDepartment = (id: string) =>
+    apiFetch<{ message: string }>(`/api/departments/${id}`, { method: "DELETE" });
+
+
+// ─── Approval Rules ─────────────────────────────────────────
+
+export interface ApprovalRuleData {
+    id: string;
+    name: string;
+    description?: string;
+    rule_type: string;
+    priority: number;
+    min_amount?: number;
+    max_amount?: number;
+    category_name?: string;
+    urgency_level?: string;
+    approver_role: string;
+    approval_flow: string;
+    sla_hours: number;
+    auto_approve: boolean;
+    escalate_after_hours?: number;
+    is_active: boolean;
+}
+
+export const getApprovalRules = () =>
+    apiFetch<ApprovalRuleData[]>("/api/approval-rules/");
+
+export const createApprovalRule = (data: Partial<ApprovalRuleData>) =>
+    apiFetch<ApprovalRuleData>("/api/approval-rules/", { method: "POST", body: JSON.stringify(data) });
+
+export const updateApprovalRule = (id: string, data: Partial<ApprovalRuleData>) =>
+    apiFetch<ApprovalRuleData>(`/api/approval-rules/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+
+export const deleteApprovalRule = (id: string) =>
+    apiFetch<{ message: string }>(`/api/approval-rules/${id}`, { method: "DELETE" });
+
+export const evaluateApprovalRules = (amount: number, category?: string, urgency?: string) =>
+    apiFetch<{ required_approvers: any[] }>(`/api/approval-rules/evaluate?amount=${amount}${category ? `&category=${category}` : ''}${urgency ? `&urgency=${urgency}` : ''}`
+        , { method: "POST" });
+
+
+// ─── Purchase Requisitions ──────────────────────────────────
+
+export interface PRLineItem {
+    id?: string;
+    product_id?: string;
+    item_name: string;
+    item_description?: string;
+    quantity: number;
+    estimated_unit_price: number;
+    estimated_total?: number;
+    unit: string;
+}
+
+export interface PurchaseRequisition {
+    id: string;
+    pr_number: string;
+    title: string;
+    description?: string;
+    requested_by: string;
+    department?: string;
+    category?: string;
+    priority: string;
+    status: string;
+    estimated_total: number;
+    budget_code?: string;
+    preferred_supplier_id?: string;
+    needed_by?: string;
+    submitted_at?: string;
+    approved_at?: string;
+    rejected_at?: string;
+    approved_by?: string;
+    rejection_reason?: string;
+    po_id?: string;
+    ai_suggested_supplier: boolean;
+    ai_suggested_quantity: boolean;
+    notes?: string;
+    justification?: string;
+    created_at?: string;
+    line_items: PRLineItem[];
+}
+
+export const getRequisitions = (status?: string, priority?: string) => {
+    let url = "/api/requisitions/";
+    const params: string[] = [];
+    if (status) params.push(`status=${status}`);
+    if (priority) params.push(`priority=${priority}`);
+    if (params.length) url += `?${params.join("&")}`;
+    return apiFetch<PurchaseRequisition[]>(url);
+};
+
+export const getRequisition = (id: string) =>
+    apiFetch<PurchaseRequisition>(`/api/requisitions/${id}`);
+
+export const createRequisition = (data: any) =>
+    apiFetch<PurchaseRequisition>("/api/requisitions/", { method: "POST", body: JSON.stringify(data) });
+
+export const updateRequisition = (id: string, data: any) =>
+    apiFetch<PurchaseRequisition>(`/api/requisitions/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+
+export const submitRequisition = (id: string) =>
+    apiFetch<{ message: string }>(`/api/requisitions/${id}/submit`, { method: "POST" });
+
+export const approveRequisition = (id: string) =>
+    apiFetch<{ message: string }>(`/api/requisitions/${id}/approve`, { method: "POST" });
+
+export const rejectRequisition = (id: string, reason?: string) =>
+    apiFetch<{ message: string }>(`/api/requisitions/${id}/reject?reason=${encodeURIComponent(reason || '')}`, { method: "POST" });
+
+export const convertPRtoPO = (id: string) =>
+    apiFetch<{ message: string; po_id: string; po_number: string }>(`/api/requisitions/${id}/convert-to-po`, { method: "POST" });
+
+export const getRequisitionStats = () =>
+    apiFetch<{ total: number; by_status: Record<string, number>; pending_review: number }>("/api/requisitions/stats/summary");
+
+// ─── AI / LLM ───────────────────────────────────────────────────
+
+export interface AIParsedRequest {
+    title: string;
+    department: string | null;
+    urgency: string;
+    purpose: string;
+    items: {
+        item_name: string;
+        matched_sku: string | null;
+        matched_product_id: string | null;
+        quantity: number;
+        unit: string;
+        estimated_unit_price: number;
+        reason: string;
+    }[];
+    needed_by_days: number | null;
+    ai_notes: string;
+}
+
+export interface AIChatResponse {
+    answer: string;
+    intent: string;
+    success: boolean;
+    usage?: { total_tokens: number };
+}
+
+export interface AIHealthResponse {
+    llm_configured: boolean;
+    llm_provider: string;
+    model: string;
+    endpoints: string[];
+}
+
+export const aiParseRequest = (userInput: string, includeStock = true) =>
+    apiFetch<{ parsed: AIParsedRequest; raw_response?: string; usage?: any }>("/api/ai/parse-request", {
+        method: "POST",
+        body: JSON.stringify({ user_input: userInput, include_stock: includeStock }),
+    });
+
+export const aiChat = (question: string, userName?: string, userRole?: string) =>
+    apiFetch<AIChatResponse>("/api/ai/chat", {
+        method: "POST",
+        body: JSON.stringify({ question, user_name: userName, user_role: userRole }),
+    });
+
+export const aiExplainSupplier = (productName: string, quantity: number, supplierScores: any[], urgency = "medium") =>
+    apiFetch<{ explanation: string; usage?: any }>("/api/ai/explain-supplier", {
+        method: "POST",
+        body: JSON.stringify({ product_name: productName, quantity, supplier_scores: supplierScores, urgency }),
+    });
+
+export const aiParseEmail = (emailText: string) =>
+    apiFetch<{ parsed: any; usage?: any }>("/api/ai/parse-email", {
+        method: "POST",
+        body: JSON.stringify({ email_text: emailText }),
+    });
+
+export const aiParsePriceSheet = (rawText: string) =>
+    apiFetch<{ parsed: any; usage?: any }>("/api/ai/parse-price-sheet", {
+        method: "POST",
+        body: JSON.stringify({ raw_text: rawText }),
+    });
+
+export const aiHealth = () => apiFetch<AIHealthResponse>("/api/ai/health");
+
+// ─── ML Endpoints ───────────────────────────────────────
+
+export interface SupplierScore {
+    supplier_id: string;
+    supplier_name: string;
+    total_score: number;
+    rank?: number;
+    breakdown: {
+        price: { score: number; weight: number; weighted: number };
+        delivery: { score: number; weight: number; weighted: number };
+        quality: { score: number; weight: number; weighted: number };
+        response: { score: number; weight: number; weighted: number };
+    };
+    metadata: Record<string, any>;
+}
+
+export interface PriceAnomalyResult {
+    is_anomaly: boolean;
+    confidence: number;
+    reason: string;
+    new_price: number;
+    historical_avg: number;
+    deviation_pct: number;
+    product_name?: string;
+}
+
+export const aiScoreSupplier = (supplierId: string, productId?: string) =>
+    apiFetch<SupplierScore>(`/api/ai/score-supplier/${supplierId}${productId ? `?product_id=${productId}` : ""}`);
+
+export const aiRankSuppliers = (productId: string, limit = 5) =>
+    apiFetch<SupplierScore[]>(`/api/ai/rank-suppliers/${productId}?limit=${limit}`);
+
+export const aiCheckPrice = (productId: string, newPrice: number) =>
+    apiFetch<PriceAnomalyResult>("/api/ai/check-price", {
+        method: "POST",
+        body: JSON.stringify({ product_id: productId, new_price: newPrice }),
+    });
+
+export const aiGetPriceAnomalies = () =>
+    apiFetch<PriceAnomalyResult[]>("/api/ai/price-anomalies");
+
+export const aiFraudScan = () =>
+    apiFetch<any[]>("/api/ai/fraud-scan");

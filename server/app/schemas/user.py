@@ -39,6 +39,7 @@ class UserResponse(BaseModel):
     email: str
     full_name: str
     role: str
+    role_source: Optional[str] = "env"  # "env" or "admin"
     department: Optional[str] = None
     approval_limit: Optional[float] = 0
     is_active: bool = True
