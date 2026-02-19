@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,13 +16,18 @@ import {
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Search, Loader2, Plus, Eye, Trash2, X, ChevronRight } from "lucide-react";
+import { Search, Loader2, Plus, Eye, X, Sparkles, Mail, FileText, CheckCircle, AlertTriangle, Copy, ChevronDown, Clock } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     getPurchaseOrders, createPurchaseOrder, getSuppliers, getProducts,
-    type PurchaseOrder, type Supplier, type Product
+    aiGeneratePO, aiMatchInvoice,
+    type PurchaseOrder, type Supplier, type Product, type PODraft, type InvoiceMatch,
 } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
+import { useAICall } from "@/hooks/useAICall";
+import { AIErrorBoundary } from "@/components/AIErrorBoundary";
+
+const INVOICE_MAX_CHARS = 15000;
 
 const STATUS_LABELS: Record<string, string> = {
     draft: "Draft", pending_approval: "Pending Approval",
@@ -37,6 +42,15 @@ export default function PurchaseOrdersPage() {
     const [createOpen, setCreateOpen] = useState(false);
     const [viewOrder, setViewOrder] = useState<PurchaseOrder | null>(null);
     const [saving, setSaving] = useState(false);
+
+    // AI PO Generation state
+    const [poDraft, setPoDraft] = useState<PODraft | null>(null);
+    const [poDraftError, setPoDraftError] = useState("");
+
+    // Invoice Matching state
+    const [invoiceText, setInvoiceText] = useState("");
+    const [invoiceMatch, setInvoiceMatch] = useState<InvoiceMatch | null>(null);
+    const [invoiceMatchError, setInvoiceMatchError] = useState("");
 
     // Create PO form state
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -54,6 +68,62 @@ export default function PurchaseOrdersPage() {
     };
 
     useEffect(() => { loadOrders(); }, []);
+
+    const handleViewOrder = (po: PurchaseOrder) => {
+        setViewOrder(po);
+        setPoDraft(null);
+        setPoDraftError("");
+        setInvoiceText("");
+        setInvoiceMatch(null);
+        setInvoiceMatchError("");
+    };
+
+    // ── AI PO Draft — useAICall (debounce + cooldown + abort)
+    const poDraftAI = useAICall<{ draft: PODraft }>({
+        fn: useCallback((_signal: AbortSignal) => {
+            if (!viewOrder) return Promise.reject(new Error("No PO selected"));
+            const lineItemsForAI = (viewOrder.line_items || []).map((li) => ({
+                product_name: li.product_id,
+                quantity: li.quantity,
+                unit: "pcs",
+                unit_price: li.unit_price,
+                total_price: li.total_price,
+            }));
+            return aiGeneratePO({
+                po_number: viewOrder.po_number,
+                total_amount: viewOrder.total_amount,
+                supplier_id: viewOrder.supplier_id,
+                line_items: lineItemsForAI,
+                payment_terms: "Net 30",
+                purpose: viewOrder.notes || "General procurement",
+            });
+        }, [viewOrder]),
+        onSuccess: (result) => {
+            if (result.draft) {
+                const draft = typeof result.draft === "string" ? JSON.parse(result.draft) : result.draft;
+                setPoDraft(draft);
+            }
+            setPoDraftError("");
+        },
+        onError: (msg) => setPoDraftError(msg || "Failed to generate PO draft"),
+    });
+
+    // ── Invoice Match — useAICall (debounce + cooldown + abort)
+    const invoiceMatchAI = useAICall<{ match: InvoiceMatch }>({
+        fn: useCallback((_signal: AbortSignal) => {
+            if (!viewOrder || !invoiceText.trim()) return Promise.reject(new Error("Invoice text required"));
+            return aiMatchInvoice({ invoice_text: invoiceText, po_id: viewOrder.id });
+        }, [viewOrder, invoiceText]),
+        onSuccess: (result) => {
+            if (result.match) {
+                const match = typeof result.match === "string" ? JSON.parse(result.match) : result.match;
+                setInvoiceMatch(match);
+            }
+            setInvoiceMatchError("");
+        },
+        onError: (msg) => setInvoiceMatchError(msg || "Invoice matching failed"),
+    });
+
 
     const openCreate = async () => {
         const [s, p] = await Promise.all([getSuppliers(), getProducts()]);
@@ -146,10 +216,10 @@ export default function PurchaseOrdersPage() {
                     </div>
                 </div>
 
-                <TabsContent value="all"><OrderTable orders={filtered} loading={loading} search={search} onView={setViewOrder} /></TabsContent>
-                <TabsContent value="draft"><OrderTable orders={filtered.filter(o => o.status === "draft")} loading={loading} search={search} onView={setViewOrder} /></TabsContent>
-                <TabsContent value="active"><OrderTable orders={filtered.filter(o => ["pending_approval", "approved", "sent"].includes(o.status))} loading={loading} search={search} onView={setViewOrder} /></TabsContent>
-                <TabsContent value="closed"><OrderTable orders={filtered.filter(o => o.status === "received")} loading={loading} search={search} onView={setViewOrder} /></TabsContent>
+                <TabsContent value="all"><OrderTable orders={filtered} loading={loading} search={search} onView={handleViewOrder} /></TabsContent>
+                <TabsContent value="draft"><OrderTable orders={filtered.filter(o => o.status === "draft")} loading={loading} search={search} onView={handleViewOrder} /></TabsContent>
+                <TabsContent value="active"><OrderTable orders={filtered.filter(o => ["pending_approval", "approved", "sent"].includes(o.status))} loading={loading} search={search} onView={handleViewOrder} /></TabsContent>
+                <TabsContent value="closed"><OrderTable orders={filtered.filter(o => o.status === "received")} loading={loading} search={search} onView={handleViewOrder} /></TabsContent>
             </Tabs>
 
             {/* Create PO Dialog */}
@@ -234,9 +304,9 @@ export default function PurchaseOrdersPage() {
                 </DialogContent>
             </Dialog>
 
-            {/* View PO Detail Dialog */}
+            {/* View PO Detail Dialog — with AI tabs */}
             <Dialog open={!!viewOrder} onOpenChange={() => setViewOrder(null)}>
-                <DialogContent className="sm:max-w-[600px]">
+                <DialogContent className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>PO: {viewOrder?.po_number}</DialogTitle>
                         <DialogDescription>
@@ -244,57 +314,275 @@ export default function PurchaseOrdersPage() {
                         </DialogDescription>
                     </DialogHeader>
                     {viewOrder && (
-                        <div className="space-y-4 py-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <p className="text-xs text-muted-foreground">Supplier</p>
-                                    <p className="font-medium">{viewOrder.supplier_name || "Unknown"}</p>
+                        <Tabs defaultValue="details">
+                            <TabsList className="w-full">
+                                <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
+                                <TabsTrigger value="ai-draft" className="flex-1">
+                                    <Sparkles className="h-3.5 w-3.5 mr-1" /> AI Draft
+                                </TabsTrigger>
+                                <TabsTrigger value="invoice" className="flex-1">
+                                    <FileText className="h-3.5 w-3.5 mr-1" /> Invoice Match
+                                </TabsTrigger>
+                            </TabsList>
+
+                            {/* Details Tab */}
+                            <TabsContent value="details" className="space-y-4 pt-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">Supplier</p>
+                                        <p className="font-medium">{viewOrder.supplier_name || "Unknown"}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">Status</p>
+                                        <StatusBadge status={viewOrder.status} />
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">Total Amount</p>
+                                        <p className="text-lg font-bold">${viewOrder.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">Expected Delivery</p>
+                                        <p className="font-medium">{viewOrder.expected_delivery || "Not set"}</p>
+                                    </div>
                                 </div>
+                                {viewOrder.notes && (
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">Notes</p>
+                                        <p className="text-sm">{viewOrder.notes}</p>
+                                    </div>
+                                )}
                                 <div>
-                                    <p className="text-xs text-muted-foreground">Status</p>
-                                    <StatusBadge status={viewOrder.status} />
-                                </div>
-                                <div>
-                                    <p className="text-xs text-muted-foreground">Total Amount</p>
-                                    <p className="text-lg font-bold">${viewOrder.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-muted-foreground">Expected Delivery</p>
-                                    <p className="font-medium">{viewOrder.expected_delivery || "Not set"}</p>
-                                </div>
-                            </div>
-                            {viewOrder.notes && (
-                                <div>
-                                    <p className="text-xs text-muted-foreground">Notes</p>
-                                    <p className="text-sm">{viewOrder.notes}</p>
-                                </div>
-                            )}
-                            <div>
-                                <p className="text-xs text-muted-foreground mb-2">Line Items ({viewOrder.line_items?.length || 0})</p>
-                                <div className="rounded-lg border">
-                                    <Table>
-                                        <TableHeader>
-                                            <TableRow>
-                                                <TableHead>Product</TableHead>
-                                                <TableHead>Qty</TableHead>
-                                                <TableHead>Price</TableHead>
-                                                <TableHead className="text-right">Total</TableHead>
-                                            </TableRow>
-                                        </TableHeader>
-                                        <TableBody>
-                                            {(viewOrder.line_items || []).map((li, i) => (
-                                                <TableRow key={i}>
-                                                    <TableCell className="font-medium">{li.product_id.substring(0, 8)}...</TableCell>
-                                                    <TableCell>{li.quantity}</TableCell>
-                                                    <TableCell>${li.unit_price.toFixed(2)}</TableCell>
-                                                    <TableCell className="text-right">${li.total_price.toFixed(2)}</TableCell>
+                                    <p className="text-xs text-muted-foreground mb-2">Line Items ({viewOrder.line_items?.length || 0})</p>
+                                    <div className="rounded-lg border">
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Product</TableHead>
+                                                    <TableHead>Qty</TableHead>
+                                                    <TableHead>Price</TableHead>
+                                                    <TableHead className="text-right">Total</TableHead>
                                                 </TableRow>
-                                            ))}
-                                        </TableBody>
-                                    </Table>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {(viewOrder.line_items || []).map((li, i) => (
+                                                    <TableRow key={i}>
+                                                        <TableCell className="font-medium">{li.product_id.substring(0, 8)}...</TableCell>
+                                                        <TableCell>{li.quantity}</TableCell>
+                                                        <TableCell>${li.unit_price.toFixed(2)}</TableCell>
+                                                        <TableCell className="text-right">${li.total_price.toFixed(2)}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </div>
                                 </div>
-                            </div>
-                        </div>
+                            </TabsContent>
+
+                            {/* AI Draft Tab */}
+                            <TabsContent value="ai-draft" className="pt-4 space-y-4">
+                                <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+                                    <Sparkles className="h-4 w-4 inline mr-2 text-purple-500" />
+                                    AI will generate a professional PO email and document ready to send to <strong>{viewOrder.supplier_name}</strong>.
+                                </div>
+                                <Button
+                                    onClick={poDraftAI.trigger}
+                                    disabled={poDraftAI.loading || poDraftAI.cooldown > 0}
+                                    className="w-full"
+                                >
+                                    {poDraftAI.loading ? (
+                                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating Draft...</>
+                                    ) : poDraftAI.cooldown > 0 ? (
+                                        <><Clock className="mr-2 h-4 w-4" /> Wait {poDraftAI.cooldown}s...</>
+                                    ) : (
+                                        <><Sparkles className="mr-2 h-4 w-4" /> Generate AI PO Draft</>
+                                    )}
+                                </Button>
+
+                                {poDraftError && (
+                                    <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 text-sm">
+                                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                                        {poDraftError}
+                                    </div>
+                                )}
+
+                                {poDraft && (
+                                    <AIErrorBoundary featureName="PO Draft">
+                                        <div className="space-y-4">
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-sm font-semibold flex items-center gap-2">
+                                                        <Mail className="h-4 w-4 text-blue-500" /> Email Draft
+                                                    </p>
+                                                    <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(poDraft.email_body)}>
+                                                        <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+                                                    </Button>
+                                                </div>
+                                                <div className="p-3 rounded-lg border bg-card text-sm">
+                                                    <p className="font-medium text-xs text-muted-foreground mb-1">Subject: {poDraft.email_subject}</p>
+                                                    <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed max-h-48 overflow-y-auto">{poDraft.email_body}</pre>
+                                                </div>
+                                            </div>
+
+                                            {poDraft.special_notes?.length > 0 && (
+                                                <div className="space-y-1">
+                                                    <p className="text-xs font-semibold text-amber-600">⚠️ Special Notes</p>
+                                                    {poDraft.special_notes.map((note, i) => (
+                                                        <p key={i} className="text-xs text-muted-foreground">• {note}</p>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-sm font-semibold flex items-center gap-2">
+                                                        <FileText className="h-4 w-4 text-green-500" /> PO Document
+                                                    </p>
+                                                    <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(poDraft.po_document)}>
+                                                        <Copy className="h-3.5 w-3.5 mr-1" /> Copy
+                                                    </Button>
+                                                </div>
+                                                <pre className="p-3 rounded-lg border bg-muted text-xs whitespace-pre-wrap font-mono leading-relaxed max-h-48 overflow-y-auto">{poDraft.po_document}</pre>
+                                            </div>
+                                        </div>
+                                    </AIErrorBoundary>
+                                )}
+                            </TabsContent>
+
+                            {/* Invoice Match Tab */}
+                            <TabsContent value="invoice" className="pt-4 space-y-4">
+                                <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+                                    <FileText className="h-4 w-4 inline mr-2 text-green-500" />
+                                    Paste the invoice text (from OCR or copy-paste) to perform 3-way matching against this PO.
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <Label>Invoice Text (paste OCR output or invoice content)</Label>
+                                        <span className={`text-xs ${invoiceText.length > INVOICE_MAX_CHARS
+                                            ? "text-red-500 font-semibold"
+                                            : "text-muted-foreground"
+                                            }`}>
+                                            {invoiceText.length.toLocaleString()} / {INVOICE_MAX_CHARS.toLocaleString()}
+                                        </span>
+                                    </div>
+                                    <Textarea
+                                        placeholder={`Invoice #INV-2024-001\nDate: January 15, 2024\nFrom: ${viewOrder.supplier_name || "Supplier Name"}\n\nItem 1: Product A x 10 @ $25.00 = $250.00\nItem 2: Product B x 5 @ $40.00 = $200.00\n\nTotal: $450.00\nPayment Terms: Net 30`}
+                                        value={invoiceText}
+                                        onChange={(e) => setInvoiceText(e.target.value.slice(0, INVOICE_MAX_CHARS))}
+                                        rows={6}
+                                        className={`font-mono text-xs ${invoiceText.length > INVOICE_MAX_CHARS * 0.9 ? "border-amber-400" : ""
+                                            }`}
+                                    />
+                                </div>
+
+                                <Button
+                                    onClick={invoiceMatchAI.trigger}
+                                    disabled={invoiceMatchAI.loading || invoiceMatchAI.cooldown > 0 || !invoiceText.trim() || invoiceText.length > INVOICE_MAX_CHARS}
+                                    className="w-full"
+                                >
+                                    {invoiceMatchAI.loading ? (
+                                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Matching Invoice...</>
+                                    ) : invoiceMatchAI.cooldown > 0 ? (
+                                        <><Clock className="mr-2 h-4 w-4" /> Wait {invoiceMatchAI.cooldown}s...</>
+                                    ) : (
+                                        <><Sparkles className="mr-2 h-4 w-4" /> Run 3-Way Match</>
+                                    )}
+                                </Button>
+
+                                {invoiceMatchError && (
+                                    <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 text-sm">
+                                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                                        {invoiceMatchError}
+                                    </div>
+                                )}
+
+                                {invoiceMatch && (
+                                    <AIErrorBoundary featureName="Invoice Match">
+                                        <div className="space-y-4">
+                                            {/* Match Result Banner */}
+                                            <div className={`flex items-center gap-3 p-4 rounded-lg border ${invoiceMatch.match_result === "approved" ? "bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-700" :
+                                                invoiceMatch.match_result === "discrepancy" ? "bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-700" :
+                                                    "bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-700"
+                                                }`}>
+                                                {invoiceMatch.match_result === "approved" ? (
+                                                    <CheckCircle className="h-6 w-6 text-green-600 shrink-0" />
+                                                ) : (
+                                                    <AlertTriangle className="h-6 w-6 text-amber-600 shrink-0" />
+                                                )}
+                                                <div className="flex-1">
+                                                    <p className="font-semibold capitalize">{invoiceMatch.match_result.replace("_", " ")}</p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        Match score: {Math.round(invoiceMatch.match_score * 100)}% · {invoiceMatch.action_reason}
+                                                    </p>
+                                                </div>
+                                                <Badge variant="outline" className={`${invoiceMatch.recommended_action === "approve_for_payment" ? "border-green-300 text-green-700" :
+                                                    "border-amber-300 text-amber-700"
+                                                    }`}>
+                                                    {invoiceMatch.recommended_action.replace(/_/g, " ")}
+                                                </Badge>
+                                            </div>
+
+                                            {/* Discrepancies */}
+                                            {invoiceMatch.discrepancies?.length > 0 && (
+                                                <div className="space-y-2">
+                                                    <p className="text-sm font-semibold text-red-600">
+                                                        ⚠️ {invoiceMatch.discrepancies.length} Discrepanc{invoiceMatch.discrepancies.length === 1 ? "y" : "ies"} Found
+                                                        {invoiceMatch.total_dispute_amount > 0 && (
+                                                            <span className="ml-2 text-xs font-normal text-muted-foreground">
+                                                                (${invoiceMatch.total_dispute_amount.toFixed(2)} in dispute)
+                                                            </span>
+                                                        )}
+                                                    </p>
+                                                    {invoiceMatch.discrepancies.map((d, i) => (
+                                                        <div key={i} className="p-3 rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/10 dark:border-red-800 text-sm">
+                                                            <p className="font-medium">{d.description}</p>
+                                                            <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
+                                                                <span>PO: <strong>{d.po_value}</strong></span>
+                                                                <span>Invoice: <strong>{d.invoice_value}</strong></span>
+                                                                {d.financial_impact > 0 && <span className="text-red-600">Impact: ${d.financial_impact.toFixed(2)}</span>}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {/* Extracted Invoice Data */}
+                                            {invoiceMatch.invoice_extracted && (
+                                                <div className="space-y-2">
+                                                    <p className="text-sm font-semibold">Extracted Invoice Data</p>
+                                                    <div className="grid grid-cols-2 gap-2 text-xs">
+                                                        {invoiceMatch.invoice_extracted.invoice_number && (
+                                                            <div className="p-2 rounded bg-muted">
+                                                                <p className="text-muted-foreground">Invoice #</p>
+                                                                <p className="font-medium">{invoiceMatch.invoice_extracted.invoice_number}</p>
+                                                            </div>
+                                                        )}
+                                                        {invoiceMatch.invoice_extracted.total_amount != null && (
+                                                            <div className="p-2 rounded bg-muted">
+                                                                <p className="text-muted-foreground">Invoice Total</p>
+                                                                <p className="font-medium">${invoiceMatch.invoice_extracted.total_amount?.toLocaleString()}</p>
+                                                            </div>
+                                                        )}
+                                                        {invoiceMatch.invoice_extracted.due_date && (
+                                                            <div className="p-2 rounded bg-muted">
+                                                                <p className="text-muted-foreground">Due Date</p>
+                                                                <p className="font-medium">{invoiceMatch.invoice_extracted.due_date}</p>
+                                                            </div>
+                                                        )}
+                                                        {invoiceMatch.invoice_extracted.payment_terms && (
+                                                            <div className="p-2 rounded bg-muted">
+                                                                <p className="text-muted-foreground">Payment Terms</p>
+                                                                <p className="font-medium">{invoiceMatch.invoice_extracted.payment_terms}</p>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </AIErrorBoundary>
+                                )}
+                            </TabsContent>
+                        </Tabs>
                     )}
                 </DialogContent>
             </Dialog>

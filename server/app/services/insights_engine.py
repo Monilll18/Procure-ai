@@ -210,19 +210,23 @@ def _supplier_risk_alerts(db: Session) -> List[Dict[str, Any]]:
 def generate_forecast(db: Session) -> List[Dict[str, Any]]:
     """
     Generate demand forecast based on historical PO data.
-    Uses simple moving average for prediction.
+    Uses Exponential Smoothing (Holt's double smoothing) with
+    trend detection, seasonality adjustment, and confidence intervals.
     """
-    # Get monthly spend for the last 6 months
-    six_months_ago = datetime.utcnow() - timedelta(days=180)
+    import math
+
+    # Fetch up to 12 months of history for better trend detection
+    twelve_months_ago = datetime.utcnow() - timedelta(days=365)
 
     monthly_data = (
         db.query(
             func.extract("year", PurchaseOrder.created_at).label("year"),
             func.extract("month", PurchaseOrder.created_at).label("month"),
             func.sum(PurchaseOrder.total_amount).label("total"),
+            func.count(PurchaseOrder.id).label("count"),
         )
         .filter(
-            PurchaseOrder.created_at >= six_months_ago,
+            PurchaseOrder.created_at >= twelve_months_ago,
             PurchaseOrder.status.notin_([POStatus.draft, POStatus.cancelled]),
         )
         .group_by("year", "month")
@@ -236,28 +240,129 @@ def generate_forecast(db: Session) -> List[Dict[str, Any]]:
     # Build actual data points
     data = []
     actuals = []
+    month_indices = []  # track which calendar month each point is
+
     for row in monthly_data:
         val = round(float(row.total), 2)
         actuals.append(val)
+        month_indices.append(int(row.month))
         data.append({
-            "month": f"{month_names[int(row.month)]}",
+            "month": month_names[int(row.month)],
             "actual": val,
-            "predicted": val,  # For historical months, predicted = actual
+            "predicted": val,
+            "lower": None,
+            "upper": None,
+            "order_count": int(row.count),
         })
 
-    # Simple moving average forecast for next 3 months
-    if actuals:
-        avg = sum(actuals) / len(actuals)
-        now = datetime.utcnow()
-        for i in range(1, 4):
-            future = now + timedelta(days=30 * i)
-            future_month = future.month
-            # Add slight upward trend
-            predicted = round(avg * (1 + 0.05 * i), 2)
-            data.append({
-                "month": month_names[future_month],
-                "actual": None,
-                "predicted": predicted,
-            })
+    if not actuals:
+        return data
+
+    # ── Holt's Double Exponential Smoothing ──────────────────────
+    # Parameters
+    alpha = 0.4   # level smoothing (higher = more weight on recent)
+    beta = 0.2    # trend smoothing
+
+    # Initialize
+    level = actuals[0]
+    trend = (actuals[-1] - actuals[0]) / max(len(actuals) - 1, 1)
+
+    smoothed = []
+    for val in actuals:
+        prev_level = level
+        level = alpha * val + (1 - alpha) * (level + trend)
+        trend = beta * (level - prev_level) + (1 - beta) * trend
+        smoothed.append(level)
+
+    # ── Seasonal Adjustment ───────────────────────────────────────
+    # Q4 (Oct-Dec) typically spikes, Q1 (Jan-Mar) dips
+    SEASONAL_FACTORS = {
+        1: 0.90, 2: 0.88, 3: 0.92, 4: 0.95,
+        5: 1.00, 6: 1.02, 7: 0.98, 8: 1.00,
+        9: 1.05, 10: 1.10, 11: 1.18, 12: 1.20,
+    }
+
+    # ── Residual std dev for confidence intervals ─────────────────
+    residuals = [abs(actuals[i] - smoothed[i]) for i in range(len(actuals))]
+    std_dev = (sum(r ** 2 for r in residuals) / max(len(residuals), 1)) ** 0.5
+
+    # ── Forecast next 3 months ────────────────────────────────────
+    now = datetime.utcnow()
+    for i in range(1, 4):
+        future = now + timedelta(days=30 * i)
+        future_month = future.month
+        seasonal = SEASONAL_FACTORS.get(future_month, 1.0)
+
+        # Project level + trend, apply seasonal factor
+        projected = round((level + trend * i) * seasonal, 2)
+        projected = max(projected, 0)  # no negative spend
+
+        # 80% confidence interval (±1.28 std devs)
+        margin = round(1.28 * std_dev * math.sqrt(i), 2)
+        data.append({
+            "month": month_names[future_month],
+            "actual": None,
+            "predicted": projected,
+            "lower": max(round(projected - margin, 2), 0),
+            "upper": round(projected + margin, 2),
+            "order_count": None,
+        })
 
     return data
+
+
+def generate_product_forecast(db: Session) -> List[Dict[str, Any]]:
+    """
+    Per-product demand forecast: predicts next-month quantity needed
+    for each product based on historical PO line items.
+    Returns top products with reorder urgency.
+    """
+    three_months_ago = datetime.utcnow() - timedelta(days=90)
+
+    # Aggregate qty ordered per product in last 3 months
+    results = (
+        db.query(
+            Product.id,
+            Product.name,
+            Product.sku,
+            Product.unit,
+            Product.reorder_point,
+            Product.reorder_quantity,
+            func.sum(POLineItem.quantity).label("total_qty"),
+            func.count(func.distinct(PurchaseOrder.id)).label("order_count"),
+        )
+        .join(POLineItem, POLineItem.product_id == Product.id)
+        .join(PurchaseOrder, PurchaseOrder.id == POLineItem.po_id)
+        .filter(
+            PurchaseOrder.created_at >= three_months_ago,
+            PurchaseOrder.status.notin_([POStatus.draft, POStatus.cancelled]),
+        )
+        .group_by(Product.id, Product.name, Product.sku, Product.unit,
+                  Product.reorder_point, Product.reorder_quantity)
+        .order_by(func.sum(POLineItem.quantity).desc())
+        .limit(10)
+        .all()
+    )
+
+    forecasts = []
+    for r in results:
+        avg_monthly = round(float(r.total_qty) / 3, 1)
+        next_month_forecast = round(avg_monthly * 1.05, 1)  # 5% growth factor
+        forecasts.append({
+            "product_id": str(r.id),
+            "product_name": r.name,
+            "sku": r.sku,
+            "unit": r.unit,
+            "avg_monthly_qty": avg_monthly,
+            "next_month_forecast": next_month_forecast,
+            "reorder_point": r.reorder_point,
+            "reorder_quantity": r.reorder_quantity,
+            "order_frequency": r.order_count,
+            "urgency": (
+                "critical" if next_month_forecast > r.reorder_point * 2
+                else "high" if next_month_forecast > r.reorder_point
+                else "normal"
+            ),
+        })
+
+    return forecasts

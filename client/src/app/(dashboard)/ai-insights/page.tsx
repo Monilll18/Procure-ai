@@ -12,13 +12,14 @@ import {
 } from "lucide-react";
 import {
     AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-    ResponsiveContainer, Legend,
+    ResponsiveContainer, Legend, ReferenceLine,
 } from "recharts";
-import { getInsights, getForecast, Insight, ForecastPoint, aiFraudScan, aiGetPriceAnomalies } from "@/lib/api";
+import { getInsights, getForecast, Insight, ForecastPoint, aiFraudScan, aiGetPriceAnomalies, aiGetProductForecast, ProductForecast } from "@/lib/api";
 
 // ─── Tab config ──────────────────────────────────────────────
 const TABS = [
     { id: "overview", label: "Overview", icon: BarChart2 },
+    { id: "demand", label: "Demand Forecast", icon: TrendingUp },
     { id: "fraud", label: "Fraud Detection", icon: Shield },
     { id: "anomalies", label: "Price Anomalies", icon: Search },
 ] as const;
@@ -27,6 +28,7 @@ type TabId = typeof TABS[number]["id"];
 export default function AIInsightsPage() {
     const [insights, setInsights] = useState<Insight[]>([]);
     const [forecast, setForecast] = useState<ForecastPoint[]>([]);
+    const [productForecast, setProductForecast] = useState<ProductForecast[]>([]);
     const [fraudAlerts, setFraudAlerts] = useState<any[]>([]);
     const [priceAnomalies, setPriceAnomalies] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
@@ -35,10 +37,11 @@ export default function AIInsightsPage() {
 
     const loadData = () => {
         setLoading(true);
-        Promise.all([getInsights(), getForecast()])
-            .then(([ins, fc]) => {
+        Promise.all([getInsights(), getForecast(), aiGetProductForecast().catch(() => [])])
+            .then(([ins, fc, pf]) => {
                 setInsights(ins);
                 setForecast(fc);
+                setProductForecast(pf as ProductForecast[]);
             })
             .catch(console.error)
             .finally(() => setLoading(false));
@@ -159,7 +162,9 @@ export default function AIInsightsPage() {
                         <Card>
                             <CardHeader>
                                 <CardTitle>Demand Forecast</CardTitle>
-                                <CardDescription>Historical spend with AI-predicted trend for next 3 months.</CardDescription>
+                                <CardDescription>
+                                    Holt's Exponential Smoothing with seasonality — shaded area shows 80% confidence interval.
+                                </CardDescription>
                             </CardHeader>
                             <CardContent>
                                 <div className="h-[350px] w-full">
@@ -174,14 +179,38 @@ export default function AIInsightsPage() {
                                                     <stop offset="5%" stopColor="#82ca9d" stopOpacity={0.8} />
                                                     <stop offset="95%" stopColor="#82ca9d" stopOpacity={0} />
                                                 </linearGradient>
+                                                <linearGradient id="colorCI" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="#82ca9d" stopOpacity={0.2} />
+                                                    <stop offset="95%" stopColor="#82ca9d" stopOpacity={0.05} />
+                                                </linearGradient>
                                             </defs>
                                             <XAxis dataKey="month" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
                                             <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}K`} />
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                            <Tooltip formatter={(v) => v != null ? [`$${Number(v).toLocaleString()}`, ""] : ["N/A", ""]} />
-                                            <Legend />
-                                            <Area type="monotone" dataKey="actual" stroke="#8884d8" fillOpacity={1} fill="url(#colorActual)" name="Actual Spend" />
-                                            <Area type="monotone" dataKey="predicted" stroke="#82ca9d" fillOpacity={1} fill="url(#colorPredicted)" name="AI Prediction" strokeDasharray="5 5" />
+                                            <Tooltip formatter={(v, name) => {
+                                                if (v == null) return ["N/A", name];
+                                                const labels: Record<string, string> = {
+                                                    actual: "Actual Spend",
+                                                    predicted: "AI Forecast",
+                                                    upper: "Upper Bound (80%)",
+                                                    lower: "Lower Bound (80%)",
+                                                };
+                                                return [`$${Number(v).toLocaleString()}`, labels[name as string] || name];
+                                            }} />
+                                            <Legend formatter={(v) => {
+                                                const labels: Record<string, string> = {
+                                                    actual: "Actual Spend",
+                                                    predicted: "AI Forecast",
+                                                    upper: "Confidence Band",
+                                                    lower: "",
+                                                };
+                                                return labels[v as string] ?? v;
+                                            }} />
+                                            {/* Confidence interval band */}
+                                            <Area type="monotone" dataKey="upper" stroke="none" fill="url(#colorCI)" name="upper" legendType="none" />
+                                            <Area type="monotone" dataKey="lower" stroke="none" fill="white" fillOpacity={0} name="lower" legendType="none" />
+                                            <Area type="monotone" dataKey="actual" stroke="#8884d8" fillOpacity={1} fill="url(#colorActual)" name="actual" />
+                                            <Area type="monotone" dataKey="predicted" stroke="#82ca9d" fillOpacity={0.3} fill="url(#colorPredicted)" name="predicted" strokeDasharray="5 5" />
                                         </AreaChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -248,6 +277,74 @@ export default function AIInsightsPage() {
                         </Card>
                     )}
                 </>
+            )}
+
+            {/* ─── Tab: Demand Forecast ──────────────────────────── */}
+            {activeTab === "demand" && (
+                <div className="space-y-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <TrendingUp className="h-5 w-5 text-green-500" /> Product Demand Forecast
+                            </CardTitle>
+                            <CardDescription>
+                                AI predicts next-month demand for top products based on 3-month order history.
+                            </CardDescription>
+                        </CardHeader>
+                    </Card>
+
+                    {loading ? (
+                        <div className="flex items-center justify-center py-12">
+                            <Loader2 className="h-6 w-6 animate-spin text-green-500 mr-2" />
+                            <span className="text-muted-foreground">Generating product forecasts...</span>
+                        </div>
+                    ) : productForecast.length === 0 ? (
+                        <Card className="p-8 text-center">
+                            <p className="text-muted-foreground">No product order history found. Create some purchase orders to see forecasts.</p>
+                        </Card>
+                    ) : (
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                            {productForecast.map((pf) => (
+                                <Card key={pf.product_id} className={`hover:shadow-md transition-shadow border-l-4 ${pf.urgency === "critical" ? "border-l-red-500" :
+                                    pf.urgency === "high" ? "border-l-amber-500" : "border-l-green-500"
+                                    }`}>
+                                    <CardHeader className="pb-2">
+                                        <div className="flex items-center justify-between">
+                                            <Badge variant="outline" className={`text-xs ${pf.urgency === "critical" ? "border-red-300 text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-300" :
+                                                pf.urgency === "high" ? "border-amber-300 text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300" :
+                                                    "border-green-300 text-green-600 bg-green-50 dark:bg-green-900/30 dark:text-green-300"
+                                                }`}>
+                                                {pf.urgency === "critical" ? "🔴 Critical" : pf.urgency === "high" ? "🟡 High" : "🟢 Normal"}
+                                            </Badge>
+                                            <span className="text-xs text-muted-foreground font-mono">{pf.sku}</span>
+                                        </div>
+                                        <CardTitle className="text-base mt-2">{pf.product_name}</CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="space-y-2 text-sm">
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Next Month Forecast</span>
+                                                <span className="font-bold text-primary">{pf.next_month_forecast} {pf.unit}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Avg Monthly</span>
+                                                <span className="font-medium">{pf.avg_monthly_qty} {pf.unit}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Reorder Point</span>
+                                                <span className="font-medium">{pf.reorder_point} {pf.unit}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-muted-foreground">Order Frequency</span>
+                                                <span className="font-medium">{pf.order_frequency}x / 3mo</span>
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
+                    )}
+                </div>
             )}
 
             {/* ─── Tab: Fraud Detection ─────────────────────────── */}

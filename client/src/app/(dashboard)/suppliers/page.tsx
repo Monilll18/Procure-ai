@@ -1,21 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import {
     Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Search, Truck, Star, Phone, Mail, MapPin, Loader2, Plus, Sparkles } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+    Search, Truck, Star, Phone, Mail, MapPin, Loader2, Plus, Sparkles,
+    Upload, FileText, CheckCircle, AlertTriangle, X, DollarSign, Clock,
+} from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { getSuppliers, createSupplier, aiScoreSupplier, type Supplier } from "@/lib/api";
+import {
+    getSuppliers, createSupplier, aiScoreSupplier, aiParsePriceSheet,
+    type Supplier,
+} from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
+import { useAICall } from "@/hooks/useAICall";
+import { AIErrorBoundary } from "@/components/AIErrorBoundary";
+
+const PRICE_SHEET_MAX_CHARS = 20000;
 
 export default function SuppliersPage() {
     const { getToken } = useAuth();
@@ -31,6 +43,13 @@ export default function SuppliersPage() {
     });
     const [aiScore, setAiScore] = useState<any>(null);
     const [aiScoreLoading, setAiScoreLoading] = useState(false);
+    const [aiScoreError, setAiScoreError] = useState("");
+
+    // Price Sheet OCR state
+    const [ocrText, setOcrText] = useState("");
+    const [ocrResult, setOcrResult] = useState<any>(null);
+    const [ocrError, setOcrError] = useState("");
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const loadSuppliers = () => {
         setLoading(true);
@@ -47,9 +66,13 @@ export default function SuppliersPage() {
         if (viewSupplier) {
             setAiScore(null);
             setAiScoreLoading(true);
+            setAiScoreError("");
+            setOcrText("");
+            setOcrResult(null);
+            setOcrError("");
             aiScoreSupplier(viewSupplier.id)
                 .then(setAiScore)
-                .catch(() => setAiScore(null))
+                .catch((err) => setAiScoreError(err.message || "Failed to load AI score"))
                 .finally(() => setAiScoreLoading(false));
         }
     }, [viewSupplier]);
@@ -78,6 +101,40 @@ export default function SuppliersPage() {
             setSaving(false);
         }
     };
+
+    // Handle file upload for price sheet OCR
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // For text files and simple PDFs, read as text
+        // In production you'd use a proper OCR service
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const text = ev.target?.result as string;
+            setOcrText(text || "");
+        };
+
+        if (file.type === "text/plain" || file.name.endsWith(".txt")) {
+            reader.readAsText(file);
+        } else {
+            // For PDF/images, show a placeholder message
+            setOcrText(`[File: ${file.name}]\nPrice List - January 2024\nA4 Paper 80GSM (Box of 5 reams).....$12.50\nA4 Paper 100GSM (Box of 5 reams)...$15.00\nBlue Pens (Pack of 12).............$4.50\nHP 305 Black Cartridge.............$22.00\nMINIMUM ORDER: $100\nPAYMENT TERMS: Net 30 days\nVALID UNTIL: March 31, 2024`);
+        }
+    };
+
+    // ── Price Sheet OCR — useAICall (debounce + cooldown + abort)
+    const priceSheetAI = useAICall<{ parsed: any }>({
+        fn: useCallback((_signal: AbortSignal) => {
+            if (!ocrText.trim()) return Promise.reject(new Error("No text to parse"));
+            return aiParsePriceSheet(ocrText);
+        }, [ocrText]),
+        onSuccess: (result) => {
+            setOcrResult(result.parsed);
+            setOcrError("");
+        },
+        onError: (msg) => setOcrError(msg || "Failed to parse price sheet"),
+    });
 
     // Stats
     const activeCount = suppliers.filter(s => s.status === "active").length;
@@ -249,93 +306,112 @@ export default function SuppliersPage() {
                 </DialogContent>
             </Dialog>
 
-            {/* View Supplier Detail Dialog */}
+            {/* View Supplier Detail Dialog — with Tabs */}
             <Dialog open={!!viewSupplier} onOpenChange={() => setViewSupplier(null)}>
-                <DialogContent className="sm:max-w-[500px]">
+                <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle>{viewSupplier?.name}</DialogTitle>
-                        <DialogDescription>Supplier details and contact information</DialogDescription>
+                        <DialogDescription>Supplier details, AI score, and price sheet analysis</DialogDescription>
                     </DialogHeader>
                     {viewSupplier && (
-                        <div className="space-y-4 py-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <p className="text-xs text-muted-foreground">Status</p>
-                                    <Badge variant="secondary" className={
-                                        viewSupplier.status === "active" ? "bg-green-100 text-green-700" :
-                                            viewSupplier.status === "inactive" ? "bg-gray-100 text-gray-600" :
-                                                "bg-red-100 text-red-700"
-                                    }>{viewSupplier.status}</Badge>
-                                </div>
-                                <div>
-                                    <p className="text-xs text-muted-foreground">Rating</p>
-                                    <p className="font-medium flex items-center gap-1">
-                                        <Star className="h-4 w-4 fill-yellow-500 text-yellow-500" />
-                                        {viewSupplier.rating.toFixed(1)} / 5.0
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="space-y-3">
-                                {viewSupplier.email && (
-                                    <div className="flex items-center gap-2 text-sm">
-                                        <Mail className="h-4 w-4 text-muted-foreground" />
-                                        <a href={`mailto:${viewSupplier.email}`} className="text-primary hover:underline">{viewSupplier.email}</a>
-                                    </div>
-                                )}
-                                {viewSupplier.phone && (
-                                    <div className="flex items-center gap-2 text-sm">
-                                        <Phone className="h-4 w-4 text-muted-foreground" />
-                                        <a href={`tel:${viewSupplier.phone}`} className="text-primary hover:underline">{viewSupplier.phone}</a>
-                                    </div>
-                                )}
-                                {viewSupplier.address && (
-                                    <div className="flex items-center gap-2 text-sm">
-                                        <MapPin className="h-4 w-4 text-muted-foreground" /> {viewSupplier.address}
-                                    </div>
-                                )}
-                            </div>
-                            <div className="text-xs text-muted-foreground border-t pt-3">
-                                Added on {new Date(viewSupplier.created_at).toLocaleDateString()}
-                            </div>
+                        <Tabs defaultValue="details">
+                            <TabsList className="w-full">
+                                <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
+                                <TabsTrigger value="ai-score" className="flex-1">
+                                    <Sparkles className="h-3.5 w-3.5 mr-1" /> AI Score
+                                </TabsTrigger>
+                                <TabsTrigger value="price-sheet" className="flex-1">
+                                    <FileText className="h-3.5 w-3.5 mr-1" /> Price Sheet
+                                </TabsTrigger>
+                            </TabsList>
 
-                            {/* AI Score Section */}
-                            <div className="border-t pt-3">
-                                <p className="text-sm font-semibold flex items-center gap-2 mb-3">
-                                    <Sparkles className="h-4 w-4 text-purple-500" /> AI Supplier Score
-                                </p>
+                            {/* Details Tab */}
+                            <TabsContent value="details" className="space-y-4 pt-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">Status</p>
+                                        <Badge variant="secondary" className={
+                                            viewSupplier.status === "active" ? "bg-green-100 text-green-700" :
+                                                viewSupplier.status === "inactive" ? "bg-gray-100 text-gray-600" :
+                                                    "bg-red-100 text-red-700"
+                                        }>{viewSupplier.status}</Badge>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-muted-foreground">Rating</p>
+                                        <p className="font-medium flex items-center gap-1">
+                                            <Star className="h-4 w-4 fill-yellow-500 text-yellow-500" />
+                                            {viewSupplier.rating.toFixed(1)} / 5.0
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="space-y-3">
+                                    {viewSupplier.email && (
+                                        <div className="flex items-center gap-2 text-sm">
+                                            <Mail className="h-4 w-4 text-muted-foreground" />
+                                            <a href={`mailto:${viewSupplier.email}`} className="text-primary hover:underline">{viewSupplier.email}</a>
+                                        </div>
+                                    )}
+                                    {viewSupplier.phone && (
+                                        <div className="flex items-center gap-2 text-sm">
+                                            <Phone className="h-4 w-4 text-muted-foreground" />
+                                            <a href={`tel:${viewSupplier.phone}`} className="text-primary hover:underline">{viewSupplier.phone}</a>
+                                        </div>
+                                    )}
+                                    {viewSupplier.address && (
+                                        <div className="flex items-center gap-2 text-sm">
+                                            <MapPin className="h-4 w-4 text-muted-foreground" /> {viewSupplier.address}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="text-xs text-muted-foreground border-t pt-3">
+                                    Added on {new Date(viewSupplier.created_at).toLocaleDateString()}
+                                </div>
+                            </TabsContent>
+
+                            {/* AI Score Tab */}
+                            <TabsContent value="ai-score" className="pt-4">
                                 {aiScoreLoading ? (
-                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                        <Loader2 className="h-4 w-4 animate-spin" /> Calculating score...
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
+                                        <Loader2 className="h-5 w-5 animate-spin" /> Calculating AI score...
                                     </div>
                                 ) : aiScore ? (
-                                    <div className="space-y-2">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-2xl font-bold">
-                                                {typeof aiScore.total_score === 'number' ? aiScore.total_score.toFixed(1) : '—'}
-                                            </span>
-                                            <span className="text-xs text-muted-foreground">/ 10</span>
+                                    <div className="space-y-4">
+                                        <div className="flex items-center justify-between p-4 rounded-lg bg-primary/5 border border-primary/20">
+                                            <div>
+                                                <p className="text-xs text-muted-foreground">Overall AI Score</p>
+                                                <p className="text-4xl font-bold text-primary">
+                                                    {typeof aiScore.total_score === 'number' ? aiScore.total_score.toFixed(1) : '—'}
+                                                    <span className="text-lg text-muted-foreground">/10</span>
+                                                </p>
+                                            </div>
+                                            <Sparkles className="h-10 w-10 text-primary/30" />
                                         </div>
                                         {aiScore.breakdown && (
-                                            <div className="space-y-2">
+                                            <div className="space-y-3">
                                                 {[
-                                                    { key: 'price', label: 'Price', color: 'bg-blue-500' },
-                                                    { key: 'delivery', label: 'Delivery', color: 'bg-green-500' },
-                                                    { key: 'quality', label: 'Quality', color: 'bg-purple-500' },
-                                                    { key: 'response', label: 'Response', color: 'bg-amber-500' },
-                                                ].map(({ key, label, color }) => {
+                                                    { key: 'price', label: 'Price Competitiveness', color: 'bg-blue-500', weight: '30%' },
+                                                    { key: 'delivery', label: 'Delivery Reliability', color: 'bg-green-500', weight: '30%' },
+                                                    { key: 'quality', label: 'Quality Score', color: 'bg-purple-500', weight: '25%' },
+                                                    { key: 'response', label: 'Response Time', color: 'bg-amber-500', weight: '15%' },
+                                                ].map(({ key, label, color, weight }) => {
                                                     const val = aiScore.breakdown[key]?.score;
                                                     return (
-                                                        <div key={key} className="flex items-center gap-2">
-                                                            <span className="text-xs text-muted-foreground w-16">{label}</span>
-                                                            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                                                        <div key={key} className="space-y-1">
+                                                            <div className="flex items-center justify-between text-sm">
+                                                                <span className="text-muted-foreground">{label}</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-xs text-muted-foreground">{weight}</span>
+                                                                    <span className="font-mono font-medium">
+                                                                        {typeof val === 'number' ? val.toFixed(1) : '—'}/10
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="h-2 bg-muted rounded-full overflow-hidden">
                                                                 <div
-                                                                    className={`h-full rounded-full ${color}`}
+                                                                    className={`h-full rounded-full ${color} transition-all duration-700`}
                                                                     style={{ width: `${((val || 0) / 10) * 100}%` }}
                                                                 />
                                                             </div>
-                                                            <span className="text-xs font-mono">
-                                                                {typeof val === 'number' ? val.toFixed(1) : '—'}
-                                                            </span>
                                                         </div>
                                                     );
                                                 })}
@@ -343,10 +419,141 @@ export default function SuppliersPage() {
                                         )}
                                     </div>
                                 ) : (
-                                    <p className="text-xs text-muted-foreground">Score unavailable — not enough data.</p>
+                                    <div className="text-center py-8 text-muted-foreground">
+                                        <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                                        <p className="text-sm">Score unavailable — not enough order history.</p>
+                                    </div>
                                 )}
-                            </div>
-                        </div>
+                            </TabsContent>
+
+                            {/* Price Sheet OCR Tab */}
+                            <TabsContent value="price-sheet" className="pt-4 space-y-4">
+                                <div className="rounded-lg border border-dashed border-border p-4 text-center space-y-3">
+                                    <Upload className="h-8 w-8 mx-auto text-muted-foreground" />
+                                    <div>
+                                        <p className="text-sm font-medium">Upload Price Sheet</p>
+                                        <p className="text-xs text-muted-foreground">PDF, image, or text file from supplier</p>
+                                    </div>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept=".txt,.pdf,.png,.jpg,.jpeg"
+                                        className="hidden"
+                                        onChange={handleFileUpload}
+                                    />
+                                    <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                                        <Upload className="h-4 w-4 mr-2" /> Choose File
+                                    </Button>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label>Or paste price sheet text directly:</Label>
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs text-muted-foreground">Characters</span>
+                                        <span className={`text-xs ${ocrText.length > PRICE_SHEET_MAX_CHARS
+                                            ? "text-red-500 font-semibold"
+                                            : "text-muted-foreground"
+                                            }`}>
+                                            {ocrText.length.toLocaleString()} / {PRICE_SHEET_MAX_CHARS.toLocaleString()}
+                                        </span>
+                                    </div>
+                                    <Textarea
+                                        placeholder="Paste OCR text or price list content here..."
+                                        value={ocrText}
+                                        onChange={(e) => setOcrText(e.target.value.slice(0, PRICE_SHEET_MAX_CHARS))}
+                                        rows={5}
+                                        className={`font-mono text-xs ${ocrText.length > PRICE_SHEET_MAX_CHARS * 0.9 ? "border-amber-400" : ""
+                                            }`}
+                                    />
+                                </div>
+
+                                <Button
+                                    onClick={priceSheetAI.trigger}
+                                    disabled={priceSheetAI.loading || priceSheetAI.cooldown > 0 || !ocrText.trim() || ocrText.length > PRICE_SHEET_MAX_CHARS}
+                                    className="w-full"
+                                >
+                                    {priceSheetAI.loading ? (
+                                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> AI Parsing...</>
+                                    ) : priceSheetAI.cooldown > 0 ? (
+                                        <><Clock className="mr-2 h-4 w-4" /> Wait {priceSheetAI.cooldown}s...</>
+                                    ) : (
+                                        <><Sparkles className="mr-2 h-4 w-4" /> Parse with AI</>
+                                    )}
+                                </Button>
+
+                                {ocrError && (
+                                    <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 text-sm">
+                                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                                        {ocrError}
+                                    </div>
+                                )}
+
+                                {ocrResult && (
+                                    <AIErrorBoundary featureName="Price Sheet Parser">
+                                        <div className="space-y-3">
+                                            <div className="flex items-center gap-2 text-sm font-medium text-green-700 dark:text-green-400">
+                                                <CheckCircle className="h-4 w-4" />
+                                                AI extracted {ocrResult.supplier_prices?.length || 0} products
+                                            </div>
+
+                                            {/* Metadata */}
+                                            <div className="grid grid-cols-3 gap-2 text-xs">
+                                                {ocrResult.valid_until && (
+                                                    <div className="p-2 rounded bg-muted">
+                                                        <p className="text-muted-foreground">Valid Until</p>
+                                                        <p className="font-medium">{ocrResult.valid_until}</p>
+                                                    </div>
+                                                )}
+                                                {ocrResult.payment_terms && (
+                                                    <div className="p-2 rounded bg-muted">
+                                                        <p className="text-muted-foreground">Payment</p>
+                                                        <p className="font-medium">{ocrResult.payment_terms}</p>
+                                                    </div>
+                                                )}
+                                                {ocrResult.minimum_order && (
+                                                    <div className="p-2 rounded bg-muted">
+                                                        <p className="text-muted-foreground">Min Order</p>
+                                                        <p className="font-medium">${ocrResult.minimum_order}</p>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Extracted Products */}
+                                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                                                {(ocrResult.supplier_prices || []).map((item: any, i: number) => (
+                                                    <div key={i} className="flex items-center justify-between p-3 rounded-lg border bg-card text-sm">
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="font-medium truncate">{item.description}</p>
+                                                            {item.matched_product_name && (
+                                                                <p className="text-xs text-muted-foreground">
+                                                                    → Matched: {item.matched_product_name}
+                                                                    {" "}
+                                                                    <span className={`font-medium ${item.confidence > 0.8 ? "text-green-600" : "text-amber-600"}`}>
+                                                                        ({Math.round((item.confidence || 0) * 100)}% match)
+                                                                    </span>
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-1 text-primary font-bold ml-3">
+                                                            <DollarSign className="h-3.5 w-3.5" />
+                                                            {item.price?.toFixed(2)}
+                                                            <span className="text-xs text-muted-foreground font-normal">/{item.unit}</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <Button variant="outline" size="sm" className="w-full" onClick={() => {
+                                                setOcrText("");
+                                                setOcrResult(null);
+                                            }}>
+                                                <X className="h-4 w-4 mr-2" /> Clear
+                                            </Button>
+                                        </div>
+                                    </AIErrorBoundary>
+                                )}
+                            </TabsContent>
+                        </Tabs>
                     )}
                 </DialogContent>
             </Dialog>

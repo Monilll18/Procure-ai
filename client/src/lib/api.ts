@@ -668,3 +668,81 @@ export const aiGetPriceAnomalies = () =>
 
 export const aiFraudScan = () =>
     apiFetch<any[]>("/api/ai/fraud-scan");
+
+// ─── New AI Endpoints ────────────────────────────────────
+
+export interface PODraft {
+    email_subject: string;
+    email_body: string;
+    po_document: string;
+    special_notes: string[];
+    estimated_delivery_note: string;
+}
+
+export interface InvoiceMatch {
+    invoice_extracted: {
+        invoice_number: string | null;
+        invoice_date: string | null;
+        supplier_name: string | null;
+        total_amount: number | null;
+        line_items: Array<{ description: string; quantity: number; unit_price: number; total: number }>;
+        payment_terms: string | null;
+        due_date: string | null;
+    };
+    match_result: "approved" | "discrepancy" | "rejected";
+    match_score: number;
+    discrepancies: Array<{
+        type: string;
+        description: string;
+        po_value: string;
+        invoice_value: string;
+        financial_impact: number;
+    }>;
+    recommended_action: string;
+    action_reason: string;
+    total_dispute_amount: number;
+}
+
+export interface ProductForecast {
+    product_id: string;
+    product_name: string;
+    sku: string;
+    unit: string;
+    avg_monthly_qty: number;
+    next_month_forecast: number;
+    reorder_point: number;
+    reorder_quantity: number;
+    order_frequency: number;
+    urgency: "critical" | "high" | "normal";
+}
+
+export const aiGeneratePO = (data: {
+    po_number: string;
+    total_amount: number;
+    supplier_id: string;
+    line_items: Array<{ product_name: string; quantity: number; unit: string; unit_price: number; total_price: number }>;
+    required_by?: string;
+    payment_terms?: string;
+    purpose?: string;
+}) =>
+    apiFetch<{ draft: PODraft; usage?: any }>("/api/ai/generate-po", {
+        method: "POST",
+        body: JSON.stringify(data),
+    });
+
+export const aiMatchInvoice = (data: {
+    invoice_text: string;
+    po_id?: string;
+    po_number?: string;
+    po_total?: number;
+    po_supplier_name?: string;
+    po_line_items?: any[];
+    received_items?: any[];
+}) =>
+    apiFetch<{ match: InvoiceMatch; usage?: any }>("/api/ai/match-invoice", {
+        method: "POST",
+        body: JSON.stringify(data),
+    });
+
+export const aiGetProductForecast = () =>
+    apiFetch<ProductForecast[]>("/api/insights/forecast/products");

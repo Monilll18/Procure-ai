@@ -1,22 +1,25 @@
 """
 AI Router — endpoints for all AI/LLM features.
 Integrations: NL Purchase Requests, Chat Assistant, Supplier Explanation,
-Email Parsing, Price Sheet Parsing.
+Email Parsing, Price Sheet Parsing, PO Generation, Invoice Matching.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 from typing import Optional, List
 import logging
 
 from app.database import get_db
 from app.models.product import Product
 from app.models.inventory import Inventory
+from app.middleware.rate_limit import limiter
 from app.services.llm_service import (
     parse_natural_language_request,
     generate_supplier_explanation,
     parse_supplier_email,
     parse_price_sheet_text,
+    generate_po_draft,
+    match_invoice_to_po,
 )
 from app.services.ai_chat import chat_with_assistant
 
@@ -24,17 +27,37 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-# ─── Schemas ──────────────────────────────────────────────────
+# ─── Schemas with Validation ───────────────────────────────
 
 class NLParseRequest(BaseModel):
     user_input: str
     include_stock: bool = True
+
+    @field_validator("user_input")
+    @classmethod
+    def validate_user_input(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("user_input cannot be empty")
+        if len(v) > 2000:
+            raise ValueError("user_input must be 2000 characters or fewer")
+        return v
 
 
 class ChatRequest(BaseModel):
     question: str
     user_name: Optional[str] = "User"
     user_role: Optional[str] = "admin"
+
+    @field_validator("question")
+    @classmethod
+    def validate_question(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("question cannot be empty")
+        if len(v) > 1000:
+            raise ValueError("question must be 1000 characters or fewer")
+        return v
 
 
 class SupplierExplainRequest(BaseModel):
@@ -43,19 +66,64 @@ class SupplierExplainRequest(BaseModel):
     urgency: str = "medium"
     supplier_scores: List[dict]
 
+    @field_validator("product_name")
+    @classmethod
+    def validate_product_name(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("product_name cannot be empty")
+        if len(v) > 200:
+            raise ValueError("product_name must be 200 characters or fewer")
+        return v.strip()
+
+    @field_validator("urgency")
+    @classmethod
+    def validate_urgency(cls, v: str) -> str:
+        allowed = {"low", "medium", "high", "critical"}
+        if v not in allowed:
+            raise ValueError(f"urgency must be one of: {', '.join(allowed)}")
+        return v
+
+    @field_validator("supplier_scores")
+    @classmethod
+    def validate_supplier_scores(cls, v: list) -> list:
+        if len(v) > 20:
+            raise ValueError("supplier_scores cannot contain more than 20 entries")
+        return v
+
 
 class EmailParseRequest(BaseModel):
     email_text: str
+
+    @field_validator("email_text")
+    @classmethod
+    def validate_email_text(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("email_text cannot be empty")
+        if len(v) > 10000:
+            raise ValueError("email_text must be 10,000 characters or fewer")
+        return v
 
 
 class PriceSheetParseRequest(BaseModel):
     raw_text: str
 
+    @field_validator("raw_text")
+    @classmethod
+    def validate_raw_text(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("raw_text cannot be empty")
+        if len(v) > 20000:
+            raise ValueError("raw_text must be 20,000 characters or fewer")
+        return v
 
-# ─── Integration 1: Natural Language Purchase Request ─────────
+
+# ─── Integration 1: Natural Language Purchase Request ─────
 
 @router.post("/parse-request")
-async def parse_purchase_request(data: NLParseRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+async def parse_purchase_request(request: Request, data: NLParseRequest, db: Session = Depends(get_db)):
     """
     Parse a natural language purchase request into structured PR data.
 
@@ -114,7 +182,8 @@ async def parse_purchase_request(data: NLParseRequest, db: Session = Depends(get
 # ─── Integration 8: AI Chat Assistant (RAG) ──────────────────
 
 @router.post("/chat")
-async def ai_chat(data: ChatRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+async def ai_chat(request: Request, data: ChatRequest, db: Session = Depends(get_db)):
     """
     RAG-powered AI chat. User asks questions in natural language,
     system fetches relevant data and answers using LLM.
@@ -150,7 +219,8 @@ async def ai_chat(data: ChatRequest, db: Session = Depends(get_db)):
 # ─── Integration 7B: Supplier Recommendation Explanation ─────
 
 @router.post("/explain-supplier")
-async def explain_supplier_choice(data: SupplierExplainRequest):
+@limiter.limit("10/minute")
+async def explain_supplier_choice(request: Request, data: SupplierExplainRequest):
     """
     Take ML supplier scores and generate a human-friendly
     recommendation using LLM.
@@ -174,7 +244,8 @@ async def explain_supplier_choice(data: SupplierExplainRequest):
 # ─── Integration 5: Supplier Email Parsing ───────────────────
 
 @router.post("/parse-email")
-async def parse_email(data: EmailParseRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+async def parse_email(request: Request, data: EmailParseRequest, db: Session = Depends(get_db)):
     """
     Parse a supplier email/quote into structured data.
     Extracts: items, prices, availability, terms, delivery timeline.
@@ -202,7 +273,8 @@ async def parse_email(data: EmailParseRequest, db: Session = Depends(get_db)):
 # ─── Integration 3: Price Sheet Text Parsing ─────────────────
 
 @router.post("/parse-price-sheet")
-async def parse_price_sheet(data: PriceSheetParseRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+async def parse_price_sheet(request: Request, data: PriceSheetParseRequest, db: Session = Depends(get_db)):
     """
     Parse OCR-extracted text from a price sheet into structured prices.
     Called after OCR extracts raw text from PDF/image.
@@ -290,6 +362,172 @@ async def scan_fraud_patterns(db: Session = Depends(get_db)):
     return detect_fraud_patterns(db)
 
 
+# ─── Integration 4: AI PO Generation ────────────────────────
+
+class POGenerateRequest(BaseModel):
+    po_number: str
+    total_amount: float
+    required_by: Optional[str] = None
+    payment_terms: Optional[str] = "Net 30"
+    purpose: Optional[str] = "General procurement"
+    supplier_id: str
+    line_items: List[dict]  # [{product_name, quantity, unit, unit_price, total_price}]
+
+    @field_validator("po_number")
+    @classmethod
+    def validate_po_number(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("po_number cannot be empty")
+        if len(v) > 50:
+            raise ValueError("po_number must be 50 characters or fewer")
+        return v.strip()
+
+    @field_validator("total_amount")
+    @classmethod
+    def validate_total_amount(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("total_amount must be greater than 0")
+        if v > 10_000_000:
+            raise ValueError("total_amount exceeds maximum allowed value")
+        return v
+
+    @field_validator("line_items")
+    @classmethod
+    def validate_line_items(cls, v: list) -> list:
+        if not v:
+            raise ValueError("line_items cannot be empty")
+        if len(v) > 50:
+            raise ValueError("line_items cannot contain more than 50 items")
+        return v
+
+
+@router.post("/generate-po")
+@limiter.limit("10/minute")
+async def generate_po_endpoint(request: Request, data: POGenerateRequest, db: Session = Depends(get_db)):
+    """
+    Generate a professional PO email draft and document using LLM.
+    Takes PO data + supplier info and returns ready-to-send email.
+    """
+    from app.models.supplier import Supplier
+    supplier_obj = db.query(Supplier).filter(Supplier.id == data.supplier_id).first()
+    if not supplier_obj:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+
+    supplier = {
+        "name": supplier_obj.name,
+        "email": supplier_obj.email or "",
+        "contact_person": getattr(supplier_obj, "contact_person", "") or "",
+        "address": supplier_obj.address or "",
+    }
+
+    po_data = {
+        "po_number": data.po_number,
+        "date": __import__("datetime").datetime.utcnow().strftime("%B %d, %Y"),
+        "total_amount": data.total_amount,
+        "required_by": data.required_by or "As soon as possible",
+        "payment_terms": data.payment_terms,
+        "purpose": data.purpose,
+    }
+
+    result = await generate_po_draft(
+        po_data=po_data,
+        supplier=supplier,
+        line_items=data.line_items,
+    )
+
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "PO generation failed"))
+
+    return {
+        "draft": result.get("content"),
+        "usage": result.get("usage"),
+    }
+
+
+# ─── Integration 9: Invoice Matching AI ──────────────────────
+
+class InvoiceMatchRequest(BaseModel):
+    invoice_text: str  # OCR-extracted text from invoice PDF/image
+    po_id: Optional[str] = None
+    po_number: Optional[str] = None
+    po_total: Optional[float] = None
+    po_supplier_name: Optional[str] = None
+    po_payment_terms: Optional[str] = "Net 30"
+    po_line_items: Optional[List[dict]] = None
+    received_items: Optional[List[dict]] = None  # goods received note
+
+    @field_validator("invoice_text")
+    @classmethod
+    def validate_invoice_text(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("invoice_text cannot be empty")
+        if len(v) > 15000:
+            raise ValueError("invoice_text must be 15,000 characters or fewer")
+        return v
+
+
+@router.post("/match-invoice")
+@limiter.limit("10/minute")
+async def match_invoice_endpoint(request: Request, data: InvoiceMatchRequest, db: Session = Depends(get_db)):
+    """
+    3-way invoice matching: Invoice vs PO vs Goods Received.
+    Extracts invoice data from OCR text, compares to PO, flags discrepancies.
+    """
+    # If po_id provided, fetch PO data from DB
+    po_data: dict = {
+        "po_number": data.po_number or "N/A",
+        "total_amount": data.po_total or 0,
+        "supplier_name": data.po_supplier_name or "N/A",
+        "payment_terms": data.po_payment_terms or "Net 30",
+        "line_items": data.po_line_items or [],
+    }
+
+    if data.po_id:
+        from app.models.purchase_order import PurchaseOrder, POLineItem
+        from app.models.product import Product
+        from app.models.supplier import Supplier
+        po = db.query(PurchaseOrder).filter(PurchaseOrder.id == data.po_id).first()
+        if po:
+            supplier = db.query(Supplier).filter(Supplier.id == po.supplier_id).first()
+            items = (
+                db.query(POLineItem, Product)
+                .join(Product, Product.id == POLineItem.product_id)
+                .filter(POLineItem.po_id == po.id)
+                .all()
+            )
+            po_data = {
+                "po_number": po.po_number,
+                "total_amount": float(po.total_amount),
+                "supplier_name": supplier.name if supplier else "Unknown",
+                "payment_terms": getattr(supplier, "payment_terms", "Net 30") if supplier else "Net 30",
+                "line_items": [
+                    {
+                        "product_name": prod.name,
+                        "sku": prod.sku,
+                        "quantity": item.quantity,
+                        "unit_price": float(item.unit_price),
+                        "total": float(item.total_price),
+                    }
+                    for item, prod in items
+                ],
+            }
+
+    result = await match_invoice_to_po(
+        invoice_text=data.invoice_text,
+        po_data=po_data,
+        received_items=data.received_items,
+    )
+
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Invoice matching failed"))
+
+    return {
+        "match": result.get("content"),
+        "usage": result.get("usage"),
+    }
+
+
 # ─── Health Check ─────────────────────────────────────────────
 
 @router.get("/health")
@@ -308,6 +546,8 @@ async def ai_health():
                 "explain-supplier (LLM recommendation)",
                 "parse-email (supplier quote extraction)",
                 "parse-price-sheet (OCR text → prices)",
+                "generate-po (AI PO email draft)",
+                "match-invoice (3-way invoice matching)",
             ],
             "ml": [
                 "score-supplier (weighted scoring)",
