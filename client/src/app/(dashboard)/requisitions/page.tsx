@@ -561,7 +561,7 @@ export default function RequisitionsPage() {
                                             <Send className="h-4 w-4 mr-1" /> Submit for Approval
                                         </Button>
                                     )}
-                                    {["submitted", "under_review"].includes(selectedPR.status) && can("manage_approvals") && (
+                                    {["submitted", "under_review"].includes(selectedPR.status) && can("approve_po") && (
                                         <>
                                             <Button variant="destructive"
                                                 onClick={() => { setShowReject(true); }}

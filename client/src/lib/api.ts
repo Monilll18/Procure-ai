@@ -135,6 +135,9 @@ export const getPurchaseOrders = (status?: string) => {
 export const createPurchaseOrder = (data: any, token: string) =>
     apiFetch<PurchaseOrder>("/api/purchase-orders/", { method: "POST", body: JSON.stringify(data) }, token);
 
+export const submitPO = (poId: string, token: string) =>
+    apiFetch<PurchaseOrder>(`/api/purchase-orders/${poId}/submit`, { method: "POST" }, token);
+
 // Approvals
 export const approvePO = (poId: string, token: string) =>
     apiFetch<any>(`/api/approvals/${poId}/approve`, { method: "POST" }, token);

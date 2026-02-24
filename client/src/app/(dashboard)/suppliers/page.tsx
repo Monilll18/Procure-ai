@@ -26,11 +26,13 @@ import {
 import { useAuth } from "@clerk/nextjs";
 import { useAICall } from "@/hooks/useAICall";
 import { AIErrorBoundary } from "@/components/AIErrorBoundary";
+import { useRBAC } from "@/lib/rbac";
 
 const PRICE_SHEET_MAX_CHARS = 20000;
 
 export default function SuppliersPage() {
     const { getToken } = useAuth();
+    const { can } = useRBAC();
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
@@ -151,9 +153,11 @@ export default function SuppliersPage() {
                         <span className="text-xs">({suppliers.length} total · {activeCount} active · ★{avgRating} avg)</span>
                     </p>
                 </div>
-                <Button onClick={openCreate}>
-                    <Plus className="mr-2 h-4 w-4" /> Add Supplier
-                </Button>
+                {can("create_supplier") && (
+                    <Button onClick={openCreate}>
+                        <Plus className="mr-2 h-4 w-4" /> Add Supplier
+                    </Button>
+                )}
             </div>
 
             {/* Search */}

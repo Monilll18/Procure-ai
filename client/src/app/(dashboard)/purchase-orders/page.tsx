@@ -19,13 +19,15 @@ import {
 import { Search, Loader2, Plus, Eye, X, Sparkles, Mail, FileText, CheckCircle, AlertTriangle, Copy, ChevronDown, Clock } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-    getPurchaseOrders, createPurchaseOrder, getSuppliers, getProducts,
+    getPurchaseOrders, createPurchaseOrder, submitPO, getSuppliers, getProducts,
     aiGeneratePO, aiMatchInvoice,
     type PurchaseOrder, type Supplier, type Product, type PODraft, type InvoiceMatch,
 } from "@/lib/api";
+import { Send } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { useAICall } from "@/hooks/useAICall";
 import { AIErrorBoundary } from "@/components/AIErrorBoundary";
+import { useRBAC } from "@/lib/rbac";
 
 const INVOICE_MAX_CHARS = 15000;
 
@@ -36,12 +38,14 @@ const STATUS_LABELS: Record<string, string> = {
 
 export default function PurchaseOrdersPage() {
     const { getToken } = useAuth();
+    const { can } = useRBAC();
     const [orders, setOrders] = useState<PurchaseOrder[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
     const [createOpen, setCreateOpen] = useState(false);
     const [viewOrder, setViewOrder] = useState<PurchaseOrder | null>(null);
     const [saving, setSaving] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
 
     // AI PO Generation state
     const [poDraft, setPoDraft] = useState<PODraft | null>(null);
@@ -175,6 +179,20 @@ export default function PurchaseOrdersPage() {
         }
     };
 
+    const handleSubmitPO = async (poId: string) => {
+        setSubmitting(true);
+        try {
+            const token = await getToken() || "";
+            await submitPO(poId, token);
+            setViewOrder(null);
+            loadOrders();
+        } catch (err: any) {
+            alert(err.message || "Failed to submit PO for approval");
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
     const filtered = orders.filter(
         (po) =>
             po.po_number.toLowerCase().includes(search.toLowerCase()) ||
@@ -191,9 +209,11 @@ export default function PurchaseOrdersPage() {
                         <span className="text-xs">({orders.length} total)</span>
                     </p>
                 </div>
-                <Button onClick={openCreate}>
-                    <Plus className="mr-2 h-4 w-4" /> Create Purchase Order
-                </Button>
+                {can("create_po") && (
+                    <Button onClick={openCreate}>
+                        <Plus className="mr-2 h-4 w-4" /> Create Purchase Order
+                    </Button>
+                )}
             </div>
 
             <Tabs defaultValue="all" className="space-y-4">
@@ -376,6 +396,23 @@ export default function PurchaseOrdersPage() {
                                         </Table>
                                     </div>
                                 </div>
+
+                                {/* Submit for Approval button — only for draft POs */}
+                                {viewOrder.status === "draft" && can("create_po") && (
+                                    <div className="pt-3 border-t">
+                                        <Button
+                                            className="w-full bg-purple-600 hover:bg-purple-700"
+                                            onClick={() => handleSubmitPO(viewOrder.id)}
+                                            disabled={submitting}
+                                        >
+                                            {submitting ? (
+                                                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...</>
+                                            ) : (
+                                                <><Send className="mr-2 h-4 w-4" /> Submit for Approval</>
+                                            )}
+                                        </Button>
+                                    </div>
+                                )}
                             </TabsContent>
 
                             {/* AI Draft Tab */}

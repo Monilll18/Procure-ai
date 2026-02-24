@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { getInventory, type InventoryItem } from "@/lib/api";
+import { useRBAC } from "@/lib/rbac";
 
 function getStockStatus(item: InventoryItem): string {
     if (item.current_stock === 0) return "Critical";
@@ -29,6 +30,7 @@ function getStockStatus(item: InventoryItem): string {
 
 export default function InventoryPage() {
     const router = useRouter();
+    const { can } = useRBAC();
     const [inventory, setInventory] = useState<InventoryItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
@@ -83,9 +85,11 @@ export default function InventoryPage() {
                     </p>
                 </div>
                 <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => router.push("/purchase-orders")}>
-                        <ShoppingCart className="mr-2 h-4 w-4" /> Create Reorder
-                    </Button>
+                    {can("create_po") && (
+                        <Button variant="outline" onClick={() => router.push("/purchase-orders")}>
+                            <ShoppingCart className="mr-2 h-4 w-4" /> Create Reorder
+                        </Button>
+                    )}
                 </div>
             </div>
 
@@ -190,10 +194,14 @@ export default function InventoryPage() {
                                                 </Badge>
                                             </TableCell>
                                             <TableCell className="text-right">
-                                                <Button variant="ghost" size="sm"
-                                                    onClick={() => { setAdjustItem(item); setAdjustQty(0); }}>
-                                                    <ArrowUpDown className="mr-1 h-3 w-3" /> Adjust
-                                                </Button>
+                                                {can("adjust_stock") ? (
+                                                    <Button variant="ghost" size="sm"
+                                                        onClick={() => { setAdjustItem(item); setAdjustQty(0); }}>
+                                                        <ArrowUpDown className="mr-1 h-3 w-3" /> Adjust
+                                                    </Button>
+                                                ) : (
+                                                    <span className="text-xs text-muted-foreground">View only</span>
+                                                )}
                                             </TableCell>
                                         </TableRow>
                                     );

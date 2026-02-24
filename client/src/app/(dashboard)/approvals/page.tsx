@@ -8,12 +8,14 @@ import { Check, X, Clock, AlertCircle, Loader2 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { getPurchaseOrders, PurchaseOrder, approvePO, rejectPO } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
+import { useRBAC } from "@/lib/rbac";
 
 export default function ApprovalsPage() {
     const [pendingOrders, setPendingOrders] = useState<PurchaseOrder[]>([]);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
     const { getToken } = useAuth();
+    const { can } = useRBAC();
 
     const loadPending = () => {
         setLoading(true);
@@ -127,26 +129,34 @@ export default function ApprovalsPage() {
                                 )}
                             </CardContent>
                             <CardFooter className="flex gap-3 border-t bg-gray-50/50 p-4">
-                                <Button
-                                    variant="outline"
-                                    className="flex-1 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                                    onClick={() => handleReject(po.id)}
-                                    disabled={actionLoading === po.id}
-                                >
-                                    <X className="w-4 h-4 mr-2" /> Reject
-                                </Button>
-                                <Button
-                                    className="flex-1 bg-purple-600 hover:bg-purple-700"
-                                    onClick={() => handleApprove(po.id)}
-                                    disabled={actionLoading === po.id}
-                                >
-                                    {actionLoading === po.id ? (
-                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                    ) : (
-                                        <Check className="w-4 h-4 mr-2" />
-                                    )}
-                                    Approve
-                                </Button>
+                                {can("approve_po") ? (
+                                    <>
+                                        <Button
+                                            variant="outline"
+                                            className="flex-1 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                                            onClick={() => handleReject(po.id)}
+                                            disabled={actionLoading === po.id}
+                                        >
+                                            <X className="w-4 h-4 mr-2" /> Reject
+                                        </Button>
+                                        <Button
+                                            className="flex-1 bg-purple-600 hover:bg-purple-700"
+                                            onClick={() => handleApprove(po.id)}
+                                            disabled={actionLoading === po.id}
+                                        >
+                                            {actionLoading === po.id ? (
+                                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                            ) : (
+                                                <Check className="w-4 h-4 mr-2" />
+                                            )}
+                                            Approve
+                                        </Button>
+                                    </>
+                                ) : (
+                                    <p className="text-sm text-muted-foreground w-full text-center">
+                                        You do not have permission to approve or reject orders.
+                                    </p>
+                                )}
                             </CardFooter>
                         </Card>
                     ))}

@@ -139,7 +139,7 @@ async def parse_purchase_request(request: Request, data: NLParseRequest, db: Ses
             "sku": p.sku,
             "category": p.category,
             "unit": p.unit,
-            "price": p.price,
+            "reorder_point": p.reorder_point,
         }
         for p in products
     ]
@@ -534,11 +534,17 @@ async def match_invoice_endpoint(request: Request, data: InvoiceMatchRequest, db
 async def ai_health():
     """Check if AI service is configured and ready."""
     import os
-    api_key = os.getenv("ZHIPU_API_KEY", "")
+    from app.services.llm_service import LLM_PROVIDER
+
+    provider_names = {
+        "groq": "Groq (LLaMA 3.3 70B)",
+        "gemini": "Google Gemini (2.0 Flash)",
+        "zhipu": "Zhipu AI (GLM-4)",
+        "none": "Not configured",
+    }
     return {
-        "llm_configured": bool(api_key),
-        "llm_provider": "Zhipu AI (GLM-4)",
-        "model": os.getenv("GLM_MODEL", "glm-4-flash"),
+        "llm_configured": LLM_PROVIDER != "none",
+        "llm_provider": provider_names.get(LLM_PROVIDER, LLM_PROVIDER),
         "features": {
             "llm": [
                 "parse-request (NL → structured PR)",

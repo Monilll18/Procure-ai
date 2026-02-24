@@ -16,6 +16,8 @@ from app.models.purchase_order import PurchaseOrder, POLineItem, POStatus
 from app.models.product import Product
 from app.models.supplier import Supplier
 from app.models.supplier_price import SupplierPrice
+from app.middleware.auth import get_current_user
+from app.middleware.role_guard import require_role
 
 router = APIRouter()
 
@@ -192,13 +194,17 @@ async def get_requisition(pr_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/")
-async def create_requisition(data: PRCreate, db: Session = Depends(get_db)):
-    """Create a new purchase requisition."""
+async def create_requisition(
+    data: PRCreate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_role("admin", "manager", "procurement_officer")),
+):
+    """Create a new purchase requisition. Requires Officer/Manager/Admin role."""
     pr = PurchaseRequisition(
         pr_number=_generate_pr_number(db),
         title=data.title,
         description=data.description,
-        requested_by="current_user",  # Will be replaced by auth middleware
+        requested_by=user["clerk_id"],
         department=data.department,
         category=data.category,
         priority=PRPriority(data.priority) if data.priority else PRPriority.medium,
@@ -244,8 +250,13 @@ async def create_requisition(data: PRCreate, db: Session = Depends(get_db)):
 
 
 @router.patch("/{pr_id}")
-async def update_requisition(pr_id: str, updates: PRUpdate, db: Session = Depends(get_db)):
-    """Update a draft PR."""
+async def update_requisition(
+    pr_id: str,
+    updates: PRUpdate,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_role("admin", "manager", "procurement_officer")),
+):
+    """Update a draft PR. Requires Officer/Manager/Admin role."""
     pr = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == pr_id).first()
     if not pr:
         raise HTTPException(status_code=404, detail="Requisition not found")
@@ -263,8 +274,12 @@ async def update_requisition(pr_id: str, updates: PRUpdate, db: Session = Depend
 
 
 @router.post("/{pr_id}/submit")
-async def submit_requisition(pr_id: str, db: Session = Depends(get_db)):
-    """Submit a PR for approval."""
+async def submit_requisition(
+    pr_id: str,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_role("admin", "manager", "procurement_officer")),
+):
+    """Submit a PR for approval. Requires Officer/Manager/Admin role."""
     pr = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == pr_id).first()
     if not pr:
         raise HTTPException(status_code=404, detail="Requisition not found")
@@ -278,8 +293,12 @@ async def submit_requisition(pr_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{pr_id}/approve")
-async def approve_requisition(pr_id: str, db: Session = Depends(get_db)):
-    """Approve a submitted PR."""
+async def approve_requisition(
+    pr_id: str,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_role("admin", "manager", "approver")),
+):
+    """Approve a submitted PR. Requires Manager/Admin/Finance role."""
     pr = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == pr_id).first()
     if not pr:
         raise HTTPException(status_code=404, detail="Requisition not found")
@@ -288,14 +307,19 @@ async def approve_requisition(pr_id: str, db: Session = Depends(get_db)):
 
     pr.status = PRStatus.approved
     pr.approved_at = datetime.utcnow()
-    pr.approved_by = "current_approver"  # Will be replaced by auth middleware
+    pr.approved_by = user["clerk_id"]
     db.commit()
     return {"message": "Requisition approved", "pr_number": pr.pr_number}
 
 
 @router.post("/{pr_id}/reject")
-async def reject_requisition(pr_id: str, reason: str = "No reason provided", db: Session = Depends(get_db)):
-    """Reject a submitted PR."""
+async def reject_requisition(
+    pr_id: str,
+    reason: str = "No reason provided",
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_role("admin", "manager", "approver")),
+):
+    """Reject a submitted PR. Requires Manager/Admin/Finance role."""
     pr = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == pr_id).first()
     if not pr:
         raise HTTPException(status_code=404, detail="Requisition not found")
@@ -308,8 +332,12 @@ async def reject_requisition(pr_id: str, reason: str = "No reason provided", db:
 
 
 @router.post("/{pr_id}/convert-to-po")
-async def convert_to_po(pr_id: str, db: Session = Depends(get_db)):
-    """Convert an approved PR into a Purchase Order."""
+async def convert_to_po(
+    pr_id: str,
+    db: Session = Depends(get_db),
+    user: dict = Depends(require_role("admin", "manager")),
+):
+    """Convert an approved PR into a Purchase Order. Requires Manager/Admin role."""
     pr = (
         db.query(PurchaseRequisition)
         .options(joinedload(PurchaseRequisition.line_items))

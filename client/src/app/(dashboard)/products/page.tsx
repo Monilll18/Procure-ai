@@ -20,6 +20,7 @@ import {
 import { Search, Package, Loader2, Plus, MoreHorizontal, Edit, Trash2 } from "lucide-react";
 import { getProducts, createProduct, updateProduct, deleteProduct, type Product } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
+import { useRBAC } from "@/lib/rbac";
 
 const CATEGORIES = [
     "Accessories", "Audio", "Computing", "Display", "Input",
@@ -28,6 +29,7 @@ const CATEGORIES = [
 
 export default function ProductsPage() {
     const { getToken } = useAuth();
+    const { can } = useRBAC();
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
@@ -113,9 +115,11 @@ export default function ProductsPage() {
                         <span className="text-xs">({products.length} total)</span>
                     </p>
                 </div>
-                <Button onClick={openCreate} className="w-full md:w-auto">
-                    <Plus className="mr-2 h-4 w-4" /> Add Product
-                </Button>
+                {can("create_product") && (
+                    <Button onClick={openCreate} className="w-full md:w-auto">
+                        <Plus className="mr-2 h-4 w-4" /> Add Product
+                    </Button>
+                )}
             </div>
 
             {/* Search */}
@@ -167,26 +171,32 @@ export default function ProductsPage() {
                                         </TableCell>
                                         <TableCell className="text-muted-foreground">{product.unit}</TableCell>
                                         <TableCell>{product.reorder_point}</TableCell>
-                                        <TableCell className="text-right">
-                                            <DropdownMenu>
-                                                <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon">
-                                                        <MoreHorizontal className="h-4 w-4" />
-                                                    </Button>
-                                                </DropdownMenuTrigger>
-                                                <DropdownMenuContent align="end">
-                                                    <DropdownMenuItem onClick={() => openEdit(product)}>
-                                                        <Edit className="mr-2 h-4 w-4" /> Edit
-                                                    </DropdownMenuItem>
-                                                    <DropdownMenuItem
-                                                        onClick={() => handleDelete(product)}
-                                                        className="text-red-600"
-                                                    >
-                                                        <Trash2 className="mr-2 h-4 w-4" /> Delete
-                                                    </DropdownMenuItem>
-                                                </DropdownMenuContent>
-                                            </DropdownMenu>
-                                        </TableCell>
+                                        {(can("edit_product") || can("delete_product")) && (
+                                            <TableCell className="text-right">
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="ghost" size="icon">
+                                                            <MoreHorizontal className="h-4 w-4" />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                        {can("edit_product") && (
+                                                            <DropdownMenuItem onClick={() => openEdit(product)}>
+                                                                <Edit className="mr-2 h-4 w-4" /> Edit
+                                                            </DropdownMenuItem>
+                                                        )}
+                                                        {can("delete_product") && (
+                                                            <DropdownMenuItem
+                                                                onClick={() => handleDelete(product)}
+                                                                className="text-red-600"
+                                                            >
+                                                                <Trash2 className="mr-2 h-4 w-4" /> Delete
+                                                            </DropdownMenuItem>
+                                                        )}
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            </TableCell>
+                                        )}
                                     </TableRow>
                                 ))
                             )}

@@ -10,6 +10,7 @@ from app.models.purchase_order import PurchaseOrder, POLineItem, POStatus
 from app.models.supplier import Supplier
 from app.schemas.purchase_order import PurchaseOrderCreate, PurchaseOrderResponse
 from app.middleware.auth import get_current_user
+from app.middleware.role_guard import require_role
 
 router = APIRouter()
 
@@ -75,9 +76,9 @@ async def get_purchase_order(po_id: UUID, db: Session = Depends(get_db)):
 async def create_purchase_order(
     po_data: PurchaseOrderCreate,
     db: Session = Depends(get_db),
-    user_id: str = Depends(get_current_user),
+    user: dict = Depends(require_role("admin", "manager", "procurement_officer")),
 ):
-    """Create a new purchase order with line items (requires auth)."""
+    """Create a new purchase order. Requires Officer/Manager/Admin role."""
     # Verify supplier exists
     supplier = db.query(Supplier).filter(Supplier.id == po_data.supplier_id).first()
     if not supplier:
@@ -101,7 +102,7 @@ async def create_purchase_order(
     po = PurchaseOrder(
         po_number=_generate_po_number(),
         supplier_id=po_data.supplier_id,
-        created_by=user_id,
+        created_by=user["clerk_id"],
         status=POStatus.draft,
         total_amount=total_amount,
         expected_delivery=po_data.expected_delivery,
@@ -127,9 +128,9 @@ async def create_purchase_order(
 async def submit_for_approval(
     po_id: UUID,
     db: Session = Depends(get_db),
-    user_id: str = Depends(get_current_user),
+    user: dict = Depends(require_role("admin", "manager", "procurement_officer")),
 ):
-    """Submit a draft PO for approval."""
+    """Submit a draft PO for approval. Requires Officer/Manager/Admin role."""
     po = (
         db.query(PurchaseOrder)
         .options(joinedload(PurchaseOrder.supplier), joinedload(PurchaseOrder.line_items))
@@ -151,9 +152,9 @@ async def submit_for_approval(
 async def delete_purchase_order(
     po_id: UUID,
     db: Session = Depends(get_db),
-    user_id: str = Depends(get_current_user),
+    user: dict = Depends(require_role("admin")),
 ):
-    """Delete a purchase order (only drafts can be deleted)."""
+    """Delete a purchase order. Admin only."""
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
