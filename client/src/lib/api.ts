@@ -76,9 +76,11 @@ export interface InventoryItem {
 export interface POLineItem {
     id: string;
     product_id: string;
+    product_name?: string;
     quantity: number;
     unit_price: number;
     total_price: number;
+    quantity_received?: number;
 }
 
 export interface PurchaseOrder {
@@ -86,14 +88,16 @@ export interface PurchaseOrder {
     po_number: string;
     supplier_id: string;
     created_by: string;
-    status: "draft" | "pending_approval" | "approved" | "sent" | "received" | "cancelled";
+    status: "draft" | "pending_approval" | "approved" | "sent" | "partially_received" | "received" | "cancelled";
     total_amount: number;
     expected_delivery: string | null;
     notes: string | null;
+    sent_at: string | null;
     created_at: string;
     updated_at: string | null;
     line_items: POLineItem[];
     supplier_name: string | null;
+    supplier_email: string | null;
 }
 
 // ─── API Functions ───────────────────────────────────────────────────
@@ -103,6 +107,22 @@ export const getProducts = (category?: string) => {
     const params = category ? `?category=${category}` : "";
     return apiFetch<Product[]>(`/api/products/${params}`);
 };
+
+// Supplier Catalog — products a specific supplier sells
+export interface SupplierCatalogItem {
+    id: string;
+    product_id: string;
+    product_name: string;
+    sku: string | null;
+    category: string | null;
+    unit_price: number;
+    currency: string;
+    min_order_qty: number | null;
+    lead_time_days: number | null;
+}
+
+export const getSupplierCatalog = (supplierId: string) =>
+    apiFetch<SupplierCatalogItem[]>(`/api/purchase-orders/supplier-catalog/${supplierId}`);
 
 export const createProduct = (data: Partial<Product>, token: string) =>
     apiFetch<Product>("/api/products/", { method: "POST", body: JSON.stringify(data) }, token);
@@ -122,9 +142,21 @@ export const getSuppliers = (status?: string) => {
 export const createSupplier = (data: Partial<Supplier>, token: string) =>
     apiFetch<Supplier>("/api/suppliers/", { method: "POST", body: JSON.stringify(data) }, token);
 
+export const deleteSupplier = (id: string, token: string) =>
+    apiFetch<null>(`/api/suppliers/${id}`, { method: "DELETE" }, token);
+
 // Inventory
 export const getInventory = () => apiFetch<InventoryItem[]>("/api/inventory/");
 export const getLowStockAlerts = () => apiFetch<InventoryItem[]>("/api/inventory/alerts");
+export const getStockMovements = (productId?: string) =>
+    apiFetch<any[]>(`/api/inventory/movements${productId ? `?product_id=${productId}` : ""}`);
+export const adjustStock = (data: {
+    product_id: string;
+    quantity: number;
+    type?: string;
+    notes?: string;
+}, token: string) =>
+    apiFetch<any>("/api/inventory/adjust", { method: "POST", body: JSON.stringify(data) }, token);
 
 // Purchase Orders
 export const getPurchaseOrders = (status?: string) => {
@@ -137,6 +169,26 @@ export const createPurchaseOrder = (data: any, token: string) =>
 
 export const submitPO = (poId: string, token: string) =>
     apiFetch<PurchaseOrder>(`/api/purchase-orders/${poId}/submit`, { method: "POST" }, token);
+
+export const receiveGoods = (poId: string, data: {
+    items: Array<{
+        line_item_id: string;
+        quantity_received: number;
+        condition?: string;
+        storage_location?: string;
+    }>;
+    notes?: string;
+}, token: string) =>
+    apiFetch<any>(`/api/purchase-orders/${poId}/receive`, { method: "POST", body: JSON.stringify(data) }, token);
+
+export const downloadPoPdf = (poId: string) => {
+    window.open(`${API_BASE}/api/purchase-orders/${poId}/pdf`, "_blank");
+};
+
+export const sendPOToSupplier = (poId: string, token: string) =>
+    apiFetch<{ message: string; sent_to: string; sent_at: string; po_status: string }>(
+        `/api/purchase-orders/${poId}/send`, { method: "POST" }, token
+    );
 
 // Approvals
 export const approvePO = (poId: string, token: string) =>
@@ -541,23 +593,23 @@ export const getRequisitions = (status?: string, priority?: string) => {
 export const getRequisition = (id: string) =>
     apiFetch<PurchaseRequisition>(`/api/requisitions/${id}`);
 
-export const createRequisition = (data: any) =>
-    apiFetch<PurchaseRequisition>("/api/requisitions/", { method: "POST", body: JSON.stringify(data) });
+export const createRequisition = (data: any, token?: string | null) =>
+    apiFetch<PurchaseRequisition>("/api/requisitions/", { method: "POST", body: JSON.stringify(data) }, token);
 
-export const updateRequisition = (id: string, data: any) =>
-    apiFetch<PurchaseRequisition>(`/api/requisitions/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+export const updateRequisition = (id: string, data: any, token?: string | null) =>
+    apiFetch<PurchaseRequisition>(`/api/requisitions/${id}`, { method: "PATCH", body: JSON.stringify(data) }, token);
 
-export const submitRequisition = (id: string) =>
-    apiFetch<{ message: string }>(`/api/requisitions/${id}/submit`, { method: "POST" });
+export const submitRequisition = (id: string, token?: string | null) =>
+    apiFetch<{ message: string }>(`/api/requisitions/${id}/submit`, { method: "POST" }, token);
 
-export const approveRequisition = (id: string) =>
-    apiFetch<{ message: string }>(`/api/requisitions/${id}/approve`, { method: "POST" });
+export const approveRequisition = (id: string, token?: string | null) =>
+    apiFetch<{ message: string }>(`/api/requisitions/${id}/approve`, { method: "POST" }, token);
 
-export const rejectRequisition = (id: string, reason?: string) =>
-    apiFetch<{ message: string }>(`/api/requisitions/${id}/reject?reason=${encodeURIComponent(reason || '')}`, { method: "POST" });
+export const rejectRequisition = (id: string, reason?: string, token?: string | null) =>
+    apiFetch<{ message: string }>(`/api/requisitions/${id}/reject?reason=${encodeURIComponent(reason || '')}`, { method: "POST" }, token);
 
-export const convertPRtoPO = (id: string) =>
-    apiFetch<{ message: string; po_id: string; po_number: string }>(`/api/requisitions/${id}/convert-to-po`, { method: "POST" });
+export const convertPRtoPO = (id: string, token?: string | null) =>
+    apiFetch<{ message: string; po_id: string; po_number: string }>(`/api/requisitions/${id}/convert-to-po`, { method: "POST" }, token);
 
 export const getRequisitionStats = () =>
     apiFetch<{ total: number; by_status: Record<string, number>; pending_review: number }>("/api/requisitions/stats/summary");
@@ -749,3 +801,53 @@ export const aiMatchInvoice = (data: {
 
 export const aiGetProductForecast = () =>
     apiFetch<ProductForecast[]>("/api/insights/forecast/products");
+
+// ─── Supplier Simulator ─────────────────────────────────────
+
+export interface SupplierResponseData {
+    id: string;
+    response_type: "accepted" | "rejected" | "counter_offer" | "partial_fulfillment";
+    message: string;
+    counter_price: number | null;
+    original_price: number | null;
+    available_quantity: number | null;
+    ordered_quantity: number | null;
+    responded_at: string | null;
+}
+
+export interface SimulatorPO {
+    id: string;
+    po_number: string;
+    supplier_name: string;
+    supplier_email: string | null;
+    total_amount: number;
+    status: string;
+    sent_at: string | null;
+    line_items: Array<{
+        id: string;
+        product_name: string;
+        quantity: number;
+        unit_price: number;
+        total_price: number;
+    }>;
+    responses: SupplierResponseData[];
+}
+
+export const getSimulatorSentPOs = () =>
+    apiFetch<SimulatorPO[]>("/api/simulator/sent-pos");
+
+export const simulateAccept = (poId: string) =>
+    apiFetch<{ message: string; response_type: string }>(`/api/simulator/accept/${poId}`, { method: "POST" });
+
+export const simulateReject = (poId: string) =>
+    apiFetch<{ message: string; response_type: string }>(`/api/simulator/reject/${poId}`, { method: "POST" });
+
+export const simulateCounter = (poId: string, data?: { price_increase_percent?: number; reason?: string }) =>
+    apiFetch<{ message: string; response_type: string; original_price: number; counter_price: number; increase_percent: number }>(
+        `/api/simulator/counter/${poId}`, { method: "POST", body: JSON.stringify(data || {}) }
+    );
+
+export const simulatePartial = (poId: string, data?: { fulfillment_percent?: number; reason?: string }) =>
+    apiFetch<{ message: string; response_type: string; ordered_quantity: number; available_quantity: number; fulfillment_percent: number }>(
+        `/api/simulator/partial/${poId}`, { method: "POST", body: JSON.stringify(data || {}) }
+    );

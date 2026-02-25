@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-    getSuppliers, createSupplier, aiScoreSupplier, aiParsePriceSheet,
+    getSuppliers, createSupplier, deleteSupplier, aiScoreSupplier, aiParsePriceSheet,
     type Supplier,
 } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
@@ -38,6 +38,7 @@ export default function SuppliersPage() {
     const [search, setSearch] = useState("");
     const [dialogOpen, setDialogOpen] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const [viewSupplier, setViewSupplier] = useState<Supplier | null>(null);
 
     const [formData, setFormData] = useState({
@@ -101,6 +102,21 @@ export default function SuppliersPage() {
             alert(err.message || "Failed to add supplier");
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleDeleteSupplier = async (id: string) => {
+        if (!confirm("Are you sure you want to delete this supplier?")) return;
+        setDeleting(true);
+        try {
+            const token = await getToken() || "";
+            await deleteSupplier(id, token);
+            setViewSupplier(null);
+            loadSuppliers();
+        } catch (err: any) {
+            alert(err.message || "Failed to delete supplier");
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -367,8 +383,19 @@ export default function SuppliersPage() {
                                         </div>
                                     )}
                                 </div>
-                                <div className="text-xs text-muted-foreground border-t pt-3">
-                                    Added on {new Date(viewSupplier.created_at).toLocaleDateString()}
+                                <div className="text-xs text-muted-foreground border-t pt-3 flex justify-between items-center">
+                                    <span>Added on {new Date(viewSupplier.created_at).toLocaleDateString()}</span>
+                                    {can("delete_supplier") && (
+                                        <Button
+                                            variant="destructive"
+                                            size="sm"
+                                            onClick={() => handleDeleteSupplier(viewSupplier.id)}
+                                            disabled={deleting}
+                                        >
+                                            {deleting ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                                            Delete Supplier
+                                        </Button>
+                                    )}
                                 </div>
                             </TabsContent>
 

@@ -24,6 +24,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { useRBAC } from "@/lib/rbac";
+import { useAuth } from "@clerk/nextjs";
 import {
     getRequisitions, createRequisition, submitRequisition,
     approveRequisition, rejectRequisition, convertPRtoPO,
@@ -52,6 +53,7 @@ const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
 
 export default function RequisitionsPage() {
     const { role, can } = useRBAC();
+    const { getToken } = useAuth();
     const [prs, setPrs] = useState<PurchaseRequisition[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState("");
@@ -115,6 +117,7 @@ export default function RequisitionsPage() {
         if (!form.title) return;
         setCreating(true);
         try {
+            const token = await getToken();
             const estimated_total = form.line_items.reduce(
                 (sum: number, li: any) => sum + (li.quantity * li.estimated_unit_price), 0
             );
@@ -122,7 +125,7 @@ export default function RequisitionsPage() {
                 ...form,
                 estimated_total,
                 line_items: form.line_items.filter((li: any) => li.item_name),
-            });
+            }, token);
             setShowCreate(false);
             setForm({
                 title: "", description: "", department: "", category: "", priority: "medium",
@@ -140,14 +143,15 @@ export default function RequisitionsPage() {
     const handleAction = async (action: string, prId: string) => {
         setActionLoading(action + prId);
         try {
-            if (action === "submit") await submitRequisition(prId);
-            else if (action === "approve") await approveRequisition(prId);
+            const token = await getToken();
+            if (action === "submit") await submitRequisition(prId, token);
+            else if (action === "approve") await approveRequisition(prId, token);
             else if (action === "reject") {
-                await rejectRequisition(prId, rejectReason);
+                await rejectRequisition(prId, rejectReason, token);
                 setShowReject(false);
                 setRejectReason("");
             }
-            else if (action === "convert") await convertPRtoPO(prId);
+            else if (action === "convert") await convertPRtoPO(prId, token);
             await loadData();
             setSelectedPR(null);
         } catch (e: any) {

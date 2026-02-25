@@ -12,7 +12,7 @@ from app.routers import (
     products, suppliers, inventory, purchase_orders, approvals,
     analytics, insights, supplier_prices, notifications, audit_logs, budgets,
     users, settings, company_config, categories, departments, approval_rules,
-    requisitions, ai
+    requisitions, ai, supplier_auth, supplier_portal
 )
 
 load_dotenv()
@@ -59,6 +59,9 @@ app.include_router(departments.router, prefix="/api/departments", tags=["Departm
 app.include_router(approval_rules.router, prefix="/api/approval-rules", tags=["Approval Rules"])
 app.include_router(requisitions.router, prefix="/api/requisitions", tags=["Requisitions"])
 app.include_router(ai.router, prefix="/api/ai", tags=["AI"])
+app.include_router(supplier_auth.router, prefix="/api/supplier-auth", tags=["Supplier Auth"])
+app.include_router(supplier_portal.router, prefix="/api/supplier-portal", tags=["Supplier Portal"])
+
 
 
 @app.get("/", tags=["Health"])

@@ -30,6 +30,8 @@ class PurchaseOrder(Base):
     total_amount = Column(Float, nullable=False, default=0.0)
     expected_delivery = Column(Date, nullable=True)
     notes = Column(Text, nullable=True)
+    pdf_url = Column(Text, nullable=True)  # Link to generated PDF
+    sent_at = Column(DateTime(timezone=True), nullable=True)  # When PO was sent to supplier
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

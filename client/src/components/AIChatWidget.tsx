@@ -151,7 +151,7 @@ export function AIChatWidget() {
                                     AI Procurement Assistant
                                 </p>
                                 <p className="text-xs text-white/70">
-                                    Powered by GLM-4
+                                    Powered by GROQ
                                 </p>
                             </div>
                         </div>
@@ -173,10 +173,10 @@ export function AIChatWidget() {
                                 {/* Avatar */}
                                 <div
                                     className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${msg.role === "user"
-                                            ? "bg-primary text-primary-foreground"
-                                            : msg.role === "system"
-                                                ? "bg-destructive/10 text-destructive"
-                                                : "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
+                                        ? "bg-primary text-primary-foreground"
+                                        : msg.role === "system"
+                                            ? "bg-destructive/10 text-destructive"
+                                            : "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
                                         }`}
                                 >
                                     {msg.role === "user" ? (
@@ -189,10 +189,10 @@ export function AIChatWidget() {
                                 {/* Bubble */}
                                 <div
                                     className={`max-w-[75%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed ${msg.role === "user"
-                                            ? "bg-primary text-primary-foreground rounded-br-md"
-                                            : msg.role === "system"
-                                                ? "bg-destructive/10 text-destructive rounded-bl-md"
-                                                : "bg-muted rounded-bl-md"
+                                        ? "bg-primary text-primary-foreground rounded-br-md"
+                                        : msg.role === "system"
+                                            ? "bg-destructive/10 text-destructive rounded-bl-md"
+                                            : "bg-muted rounded-bl-md"
                                         }`}
                                 >
                                     <p className="whitespace-pre-wrap">{msg.content}</p>

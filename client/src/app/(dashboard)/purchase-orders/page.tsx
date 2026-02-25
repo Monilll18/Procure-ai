@@ -16,12 +16,14 @@ import {
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Search, Loader2, Plus, Eye, X, Sparkles, Mail, FileText, CheckCircle, AlertTriangle, Copy, ChevronDown, Clock } from "lucide-react";
+import { Search, Loader2, Plus, Eye, X, Sparkles, Mail, FileText, CheckCircle, AlertTriangle, Copy, ChevronDown, Clock, Download, PackageCheck } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     getPurchaseOrders, createPurchaseOrder, submitPO, getSuppliers, getProducts,
-    aiGeneratePO, aiMatchInvoice,
+    aiGeneratePO, aiMatchInvoice, downloadPoPdf, sendPOToSupplier, receiveGoods,
+    getSupplierCatalog,
     type PurchaseOrder, type Supplier, type Product, type PODraft, type InvoiceMatch,
+    type SupplierCatalogItem,
 } from "@/lib/api";
 import { Send } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
@@ -33,7 +35,8 @@ const INVOICE_MAX_CHARS = 15000;
 
 const STATUS_LABELS: Record<string, string> = {
     draft: "Draft", pending_approval: "Pending Approval",
-    approved: "Approved", sent: "Sent", received: "Received", cancelled: "Cancelled",
+    approved: "Approved", sent: "Sent", partially_received: "Partially Received",
+    received: "Received", cancelled: "Cancelled",
 };
 
 export default function PurchaseOrdersPage() {
@@ -56,9 +59,15 @@ export default function PurchaseOrdersPage() {
     const [invoiceMatch, setInvoiceMatch] = useState<InvoiceMatch | null>(null);
     const [invoiceMatchError, setInvoiceMatchError] = useState("");
 
+    // Receive Goods state
+    const [receiveItems, setReceiveItems] = useState<{ line_item_id: string; quantity_received: number; condition: string }[]>([]);
+    const [receiveNotes, setReceiveNotes] = useState("");
+    const [receiving, setReceiving] = useState(false);
+
     // Create PO form state
     const [suppliers, setSuppliers] = useState<Supplier[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
+    const [catalogItems, setCatalogItems] = useState<SupplierCatalogItem[]>([]);
     const [selectedSupplier, setSelectedSupplier] = useState("");
     const [poNotes, setPoNotes] = useState("");
     const [lineItems, setLineItems] = useState<{ product_id: string; quantity: number; unit_price: number }[]>([]);
@@ -74,12 +83,24 @@ export default function PurchaseOrdersPage() {
     useEffect(() => { loadOrders(); }, []);
 
     const handleViewOrder = (po: PurchaseOrder) => {
+        // Cancel any in-flight AI requests from previous PO
+        poDraftAI.abort();
+        invoiceMatchAI.abort();
         setViewOrder(po);
         setPoDraft(null);
         setPoDraftError("");
         setInvoiceText("");
         setInvoiceMatch(null);
         setInvoiceMatchError("");
+        // Init receive goods state
+        setReceiveItems(
+            (po.line_items || []).map((li) => ({
+                line_item_id: li.id,
+                quantity_received: 0,
+                condition: "GOOD",
+            }))
+        );
+        setReceiveNotes("");
     };
 
     // ── AI PO Draft — useAICall (debounce + cooldown + abort)
@@ -134,9 +155,25 @@ export default function PurchaseOrdersPage() {
         setSuppliers(s);
         setProducts(p);
         setSelectedSupplier("");
+        setCatalogItems([]);
         setPoNotes("");
         setLineItems([{ product_id: "", quantity: 1, unit_price: 0 }]);
         setCreateOpen(true);
+    };
+
+    const handleSupplierChange = async (supplierId: string) => {
+        setSelectedSupplier(supplierId);
+        setLineItems([{ product_id: "", quantity: 1, unit_price: 0 }]);
+        if (supplierId) {
+            try {
+                const catalog = await getSupplierCatalog(supplierId);
+                setCatalogItems(catalog);
+            } catch {
+                setCatalogItems([]);
+            }
+        } else {
+            setCatalogItems([]);
+        }
     };
 
     const addLineItem = () => {
@@ -190,6 +227,27 @@ export default function PurchaseOrdersPage() {
             alert(err.message || "Failed to submit PO for approval");
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const handleReceiveGoods = async () => {
+        if (!viewOrder) return;
+        const itemsToReceive = receiveItems.filter((r) => r.quantity_received > 0);
+        if (itemsToReceive.length === 0) return;
+        setReceiving(true);
+        try {
+            const token = await getToken() || "";
+            const result = await receiveGoods(viewOrder.id, {
+                items: itemsToReceive,
+                notes: receiveNotes || undefined,
+            }, token);
+            alert(`✅ ${result.message}\nStatus: ${result.po_status}\nTotal received: ${result.total_received}/${result.total_ordered}`);
+            loadOrders();
+            setViewOrder(null);
+        } catch (err: any) {
+            alert(`❌ ${err.message || "Failed to record receipt"}`);
+        } finally {
+            setReceiving(false);
         }
     };
 
@@ -252,7 +310,7 @@ export default function PurchaseOrdersPage() {
                     <div className="space-y-6 py-4">
                         <div className="grid gap-2">
                             <Label>Supplier</Label>
-                            <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
+                            <Select value={selectedSupplier} onValueChange={handleSupplierChange}>
                                 <SelectTrigger><SelectValue placeholder="Select supplier..." /></SelectTrigger>
                                 <SelectContent>
                                     {suppliers.map((s) => (
@@ -262,6 +320,9 @@ export default function PurchaseOrdersPage() {
                                     ))}
                                 </SelectContent>
                             </Select>
+                            {selectedSupplier && catalogItems.length === 0 && (
+                                <p className="text-xs text-amber-600 mt-1">⚠ This supplier has no products in their catalog yet.</p>
+                            )}
                         </div>
 
                         <div className="space-y-3">
@@ -275,12 +336,24 @@ export default function PurchaseOrdersPage() {
                                 <div key={i} className="flex items-end gap-2 p-3 rounded-lg border bg-muted/30">
                                     <div className="flex-1 grid gap-1">
                                         <Label className="text-xs">Product</Label>
-                                        <Select value={li.product_id} onValueChange={(v) => updateLineItem(i, "product_id", v)}>
+                                        <Select value={li.product_id} onValueChange={(v) => {
+                                            updateLineItem(i, "product_id", v);
+                                            const catItem = catalogItems.find(c => c.product_id === v);
+                                            if (catItem) updateLineItem(i, "unit_price", catItem.unit_price);
+                                        }}>
                                             <SelectTrigger className="h-9"><SelectValue placeholder="Select product..." /></SelectTrigger>
                                             <SelectContent>
-                                                {products.map((p) => (
-                                                    <SelectItem key={p.id} value={p.id}>{p.name} ({p.sku})</SelectItem>
-                                                ))}
+                                                {catalogItems.length > 0 ? (
+                                                    catalogItems.map((c) => (
+                                                        <SelectItem key={c.product_id} value={c.product_id}>
+                                                            {c.product_name} {c.sku ? `(${c.sku})` : ""} — ${c.unit_price.toFixed(2)}
+                                                        </SelectItem>
+                                                    ))
+                                                ) : (
+                                                    products.map((p) => (
+                                                        <SelectItem key={p.id} value={p.id}>{p.name} ({p.sku})</SelectItem>
+                                                    ))
+                                                )}
                                             </SelectContent>
                                         </Select>
                                     </div>
@@ -337,12 +410,17 @@ export default function PurchaseOrdersPage() {
                         <Tabs defaultValue="details">
                             <TabsList className="w-full">
                                 <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
-                                <TabsTrigger value="ai-draft" className="flex-1">
-                                    <Sparkles className="h-3.5 w-3.5 mr-1" /> AI Draft
+                                <TabsTrigger value="send-supplier" className="flex-1">
+                                    <Send className="h-3.5 w-3.5 mr-1" /> Send to Supplier
                                 </TabsTrigger>
                                 <TabsTrigger value="invoice" className="flex-1">
                                     <FileText className="h-3.5 w-3.5 mr-1" /> Invoice Match
                                 </TabsTrigger>
+                                {["approved", "sent", "partially_received"].includes(viewOrder.status) && (
+                                    <TabsTrigger value="receive" className="flex-1">
+                                        <PackageCheck className="h-3.5 w-3.5 mr-1" /> Receive Goods
+                                    </TabsTrigger>
+                                )}
                             </TabsList>
 
                             {/* Details Tab */}
@@ -386,7 +464,7 @@ export default function PurchaseOrdersPage() {
                                             <TableBody>
                                                 {(viewOrder.line_items || []).map((li, i) => (
                                                     <TableRow key={i}>
-                                                        <TableCell className="font-medium">{li.product_id.substring(0, 8)}...</TableCell>
+                                                        <TableCell className="font-medium">{li.product_name || li.product_id?.substring(0, 8) || "—"}</TableCell>
                                                         <TableCell>{li.quantity}</TableCell>
                                                         <TableCell>${li.unit_price.toFixed(2)}</TableCell>
                                                         <TableCell className="text-right">${li.total_price.toFixed(2)}</TableCell>
@@ -413,75 +491,100 @@ export default function PurchaseOrdersPage() {
                                         </Button>
                                     </div>
                                 )}
+
+                                {/* Download PDF button */}
+                                <div className={viewOrder.status === "draft" ? "pt-3 border-t" : ""}>
+                                    <Button
+                                        variant="outline"
+                                        className="w-full gap-2"
+                                        onClick={() => downloadPoPdf(viewOrder.id)}
+                                    >
+                                        <Download className="h-4 w-4" /> Download PDF
+                                    </Button>
+                                </div>
                             </TabsContent>
 
-                            {/* AI Draft Tab */}
-                            <TabsContent value="ai-draft" className="pt-4 space-y-4">
+                            {/* Send to Supplier Tab */}
+                            <TabsContent value="send-supplier" className="pt-4 space-y-4">
                                 <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-                                    <Sparkles className="h-4 w-4 inline mr-2 text-purple-500" />
-                                    AI will generate a professional PO email and document ready to send to <strong>{viewOrder.supplier_name}</strong>.
+                                    <Mail className="h-4 w-4 inline mr-2 text-blue-500" />
+                                    Send a professional PO email with line items to <strong>{viewOrder.supplier_name}</strong>
+                                    {viewOrder.supplier_email ? ` (${viewOrder.supplier_email})` : " — ⚠️ No email set"}.
                                 </div>
-                                <Button
-                                    onClick={poDraftAI.trigger}
-                                    disabled={poDraftAI.loading || poDraftAI.cooldown > 0}
-                                    className="w-full"
-                                >
-                                    {poDraftAI.loading ? (
-                                        <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating Draft...</>
-                                    ) : poDraftAI.cooldown > 0 ? (
-                                        <><Clock className="mr-2 h-4 w-4" /> Wait {poDraftAI.cooldown}s...</>
-                                    ) : (
-                                        <><Sparkles className="mr-2 h-4 w-4" /> Generate AI PO Draft</>
-                                    )}
-                                </Button>
 
-                                {poDraftError && (
-                                    <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 text-sm">
-                                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
-                                        {poDraftError}
-                                    </div>
-                                )}
-
-                                {poDraft && (
-                                    <AIErrorBoundary featureName="PO Draft">
-                                        <div className="space-y-4">
-                                            <div className="space-y-2">
-                                                <div className="flex items-center justify-between">
-                                                    <p className="text-sm font-semibold flex items-center gap-2">
-                                                        <Mail className="h-4 w-4 text-blue-500" /> Email Draft
-                                                    </p>
-                                                    <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(poDraft.email_body)}>
-                                                        <Copy className="h-3.5 w-3.5 mr-1" /> Copy
-                                                    </Button>
-                                                </div>
-                                                <div className="p-3 rounded-lg border bg-card text-sm">
-                                                    <p className="font-medium text-xs text-muted-foreground mb-1">Subject: {poDraft.email_subject}</p>
-                                                    <pre className="whitespace-pre-wrap font-sans text-xs leading-relaxed max-h-48 overflow-y-auto">{poDraft.email_body}</pre>
-                                                </div>
-                                            </div>
-
-                                            {poDraft.special_notes?.length > 0 && (
-                                                <div className="space-y-1">
-                                                    <p className="text-xs font-semibold text-amber-600">⚠️ Special Notes</p>
-                                                    {poDraft.special_notes.map((note, i) => (
-                                                        <p key={i} className="text-xs text-muted-foreground">• {note}</p>
+                                {/* Email Preview */}
+                                <div className="rounded-lg border bg-card p-4 space-y-3">
+                                    <p className="text-xs font-semibold text-muted-foreground">📧 Email Preview</p>
+                                    <div className="text-sm space-y-2">
+                                        <p><span className="text-muted-foreground">To:</span> <strong>{viewOrder.supplier_email || "No email set"}</strong></p>
+                                        <p><span className="text-muted-foreground">Subject:</span> Purchase Order {viewOrder.po_number} — ${viewOrder.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                                        <hr className="border-dashed" />
+                                        <p>Dear {viewOrder.supplier_name},</p>
+                                        <p>Please find below our purchase order. We kindly request your confirmation of receipt and expected delivery date.</p>
+                                        <div className="rounded border p-2 bg-muted/50">
+                                            <table className="w-full text-xs">
+                                                <thead>
+                                                    <tr className="border-b">
+                                                        <th className="text-left p-1">Product</th>
+                                                        <th className="text-center p-1">Qty</th>
+                                                        <th className="text-right p-1">Unit Price</th>
+                                                        <th className="text-right p-1">Total</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {(viewOrder.line_items || []).map((li, i) => (
+                                                        <tr key={i} className="border-b border-dashed">
+                                                            <td className="p-1">{li.product_name || li.product_id?.substring(0, 8)}</td>
+                                                            <td className="text-center p-1">{li.quantity}</td>
+                                                            <td className="text-right p-1">${li.unit_price.toFixed(2)}</td>
+                                                            <td className="text-right p-1">${li.total_price.toFixed(2)}</td>
+                                                        </tr>
                                                     ))}
-                                                </div>
-                                            )}
-
-                                            <div className="space-y-2">
-                                                <div className="flex items-center justify-between">
-                                                    <p className="text-sm font-semibold flex items-center gap-2">
-                                                        <FileText className="h-4 w-4 text-green-500" /> PO Document
-                                                    </p>
-                                                    <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(poDraft.po_document)}>
-                                                        <Copy className="h-3.5 w-3.5 mr-1" /> Copy
-                                                    </Button>
-                                                </div>
-                                                <pre className="p-3 rounded-lg border bg-muted text-xs whitespace-pre-wrap font-mono leading-relaxed max-h-48 overflow-y-auto">{poDraft.po_document}</pre>
-                                            </div>
+                                                </tbody>
+                                                <tfoot>
+                                                    <tr className="font-bold">
+                                                        <td colSpan={3} className="text-right p-1">Total:</td>
+                                                        <td className="text-right p-1">${viewOrder.total_amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
                                         </div>
-                                    </AIErrorBoundary>
+                                        <p className="text-xs text-muted-foreground">Please confirm this order at your earliest convenience.</p>
+                                    </div>
+                                </div>
+
+                                {/* Send Button */}
+                                {viewOrder.status === "sent" ? (
+                                    <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400 text-sm">
+                                        <CheckCircle className="h-4 w-4" />
+                                        Already sent{viewOrder.sent_at ? ` on ${new Date(viewOrder.sent_at).toLocaleDateString()}` : ""}
+                                    </div>
+                                ) : (
+                                    <Button
+                                        className="w-full bg-purple-600 hover:bg-purple-700 gap-2"
+                                        disabled={!viewOrder.supplier_email || submitting}
+                                        onClick={async () => {
+                                            setSubmitting(true);
+                                            try {
+                                                const token = await getToken();
+                                                if (!token) throw new Error("Not authenticated");
+                                                const result = await sendPOToSupplier(viewOrder.id, token);
+                                                alert(`✅ ${result.message}`);
+                                                loadOrders();
+                                                setViewOrder(null);
+                                            } catch (err: any) {
+                                                alert(`❌ ${err.message || "Failed to send"}`);
+                                            } finally {
+                                                setSubmitting(false);
+                                            }
+                                        }}
+                                    >
+                                        {submitting ? (
+                                            <><Loader2 className="h-4 w-4 animate-spin" /> Sending...</>
+                                        ) : (
+                                            <><Send className="h-4 w-4" /> Send PO to Supplier</>
+                                        )}
+                                    </Button>
                                 )}
                             </TabsContent>
 
@@ -619,6 +722,106 @@ export default function PurchaseOrdersPage() {
                                     </AIErrorBoundary>
                                 )}
                             </TabsContent>
+
+                            {/* Receive Goods Tab */}
+                            <TabsContent value="receive" className="pt-4 space-y-4">
+                                <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+                                    <PackageCheck className="h-4 w-4 inline mr-2 text-emerald-500" />
+                                    Record goods received for each line item. Updates inventory and stock movements automatically.
+                                </div>
+
+                                <div className="rounded-lg border">
+                                    <Table>
+                                        <TableHeader>
+                                            <TableRow>
+                                                <TableHead>Product</TableHead>
+                                                <TableHead className="text-center">Ordered</TableHead>
+                                                <TableHead className="text-center">Received</TableHead>
+                                                <TableHead className="text-center">Receive Now</TableHead>
+                                                <TableHead>Condition</TableHead>
+                                            </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                            {(viewOrder.line_items || []).map((li, i) => {
+                                                const remaining = li.quantity - (li.quantity_received || 0);
+                                                return (
+                                                    <TableRow key={li.id}>
+                                                        <TableCell className="font-medium">
+                                                            {li.product_name || li.product_id?.substring(0, 8) || "—"}
+                                                        </TableCell>
+                                                        <TableCell className="text-center">{li.quantity}</TableCell>
+                                                        <TableCell className="text-center">
+                                                            <span className={li.quantity_received === li.quantity ? "text-green-600 font-semibold" : ""}>
+                                                                {li.quantity_received || 0}
+                                                            </span>
+                                                        </TableCell>
+                                                        <TableCell className="text-center">
+                                                            <Input
+                                                                type="number"
+                                                                min={0}
+                                                                max={remaining}
+                                                                className="h-8 w-20 mx-auto text-center"
+                                                                value={receiveItems[i]?.quantity_received || 0}
+                                                                disabled={remaining <= 0}
+                                                                onChange={(e) => {
+                                                                    const val = Math.min(parseInt(e.target.value) || 0, remaining);
+                                                                    setReceiveItems((prev) => prev.map((r, idx) =>
+                                                                        idx === i ? { ...r, quantity_received: val } : r
+                                                                    ));
+                                                                }}
+                                                            />
+                                                            {remaining <= 0 && (
+                                                                <span className="text-xs text-green-600">✓ Complete</span>
+                                                            )}
+                                                        </TableCell>
+                                                        <TableCell>
+                                                            <Select
+                                                                value={receiveItems[i]?.condition || "GOOD"}
+                                                                onValueChange={(v) => {
+                                                                    setReceiveItems((prev) => prev.map((r, idx) =>
+                                                                        idx === i ? { ...r, condition: v } : r
+                                                                    ));
+                                                                }}
+                                                            >
+                                                                <SelectTrigger className="h-8 w-28">
+                                                                    <SelectValue />
+                                                                </SelectTrigger>
+                                                                <SelectContent>
+                                                                    <SelectItem value="GOOD">✅ Good</SelectItem>
+                                                                    <SelectItem value="DAMAGED">⚠️ Damaged</SelectItem>
+                                                                    <SelectItem value="REJECTED">❌ Rejected</SelectItem>
+                                                                </SelectContent>
+                                                            </Select>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                );
+                                            })}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+
+                                <div className="grid gap-2">
+                                    <Label>Notes (optional)</Label>
+                                    <Textarea
+                                        placeholder="Add any notes about this delivery..."
+                                        value={receiveNotes}
+                                        onChange={(e) => setReceiveNotes(e.target.value)}
+                                        rows={2}
+                                    />
+                                </div>
+
+                                <Button
+                                    className="w-full bg-emerald-600 hover:bg-emerald-700 gap-2"
+                                    disabled={receiving || receiveItems.every((r) => r.quantity_received <= 0)}
+                                    onClick={handleReceiveGoods}
+                                >
+                                    {receiving ? (
+                                        <><Loader2 className="h-4 w-4 animate-spin" /> Recording Receipt...</>
+                                    ) : (
+                                        <><PackageCheck className="h-4 w-4" /> Record Receipt</>
+                                    )}
+                                </Button>
+                            </TabsContent>
                         </Tabs>
                     )}
                 </DialogContent>
@@ -691,6 +894,7 @@ function StatusBadge({ status }: { status: string }) {
         pending_approval: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
         approved: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
         sent: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400",
+        partially_received: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400",
         received: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
         cancelled: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
     };

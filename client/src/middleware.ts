@@ -7,6 +7,7 @@ const isPublicRoute = createRouteMatcher([
     "/sign-in(.*)",   // Sign-in pages
     "/sign-up(.*)",   // Sign-up pages
     "/api/webhooks(.*)", // Webhook endpoints
+    "/supplier-portal(.*)", // Supplier portal has its own JWT auth
 ]);
 
 // Routes that signed-in users should be redirected away from

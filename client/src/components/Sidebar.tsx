@@ -17,6 +17,7 @@ import {
     ChevronLeft,
     FolderTree,
     Building2,
+    Zap,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";

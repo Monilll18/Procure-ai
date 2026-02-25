@@ -18,6 +18,9 @@ from app.models.supplier import Supplier
 from app.models.supplier_price import SupplierPrice
 from app.middleware.auth import get_current_user
 from app.middleware.role_guard import require_role
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -289,6 +292,26 @@ async def submit_requisition(
     pr.status = PRStatus.submitted
     pr.submitted_at = datetime.utcnow()
     db.commit()
+
+    # 📧 Send email notification to admins/managers
+    try:
+        from app.services.email_service import send_approval_needed
+        from app.models.user import User
+        approvers = db.query(User).filter(User.role.in_(["admin", "manager", "approver"]), User.is_active == True).all()
+        for approver in approvers:
+            if approver.email:
+                send_approval_needed(
+                    approver_email=approver.email,
+                    approver_name=approver.full_name or approver.email,
+                    pr_number=pr.pr_number,
+                    requester_name=user.get("email", "Unknown"),
+                    amount=pr.estimated_total,
+                    purpose=pr.title,
+                )
+                logger.info(f"Approval email sent to {approver.email} for {pr.pr_number}")
+    except Exception as e:
+        logger.warning(f"Email send failed (non-blocking): {e}")
+
     return {"message": "Requisition submitted for approval", "pr_number": pr.pr_number}
 
 
@@ -309,6 +332,23 @@ async def approve_requisition(
     pr.approved_at = datetime.utcnow()
     pr.approved_by = user["clerk_id"]
     db.commit()
+
+    # 📧 Send approval email to requester
+    try:
+        from app.services.email_service import send_pr_approved
+        from app.models.user import User
+        requester = db.query(User).filter(User.clerk_id == pr.requested_by).first()
+        if requester and requester.email:
+            send_pr_approved(
+                requester_email=requester.email,
+                requester_name=requester.full_name or requester.email,
+                pr_number=pr.pr_number,
+                approver_name=user.get("email", "Manager"),
+            )
+            logger.info(f"Approval email sent to {requester.email} for {pr.pr_number}")
+    except Exception as e:
+        logger.warning(f"Email send failed (non-blocking): {e}")
+
     return {"message": "Requisition approved", "pr_number": pr.pr_number}
 
 
@@ -328,6 +368,24 @@ async def reject_requisition(
     pr.rejected_at = datetime.utcnow()
     pr.rejection_reason = reason
     db.commit()
+
+    # 📧 Send rejection email to requester
+    try:
+        from app.services.email_service import send_pr_rejected
+        from app.models.user import User
+        requester = db.query(User).filter(User.clerk_id == pr.requested_by).first()
+        if requester and requester.email:
+            send_pr_rejected(
+                requester_email=requester.email,
+                requester_name=requester.full_name or requester.email,
+                pr_number=pr.pr_number,
+                approver_name=user.get("email", "Manager"),
+                reason=reason,
+            )
+            logger.info(f"Rejection email sent to {requester.email} for {pr.pr_number}")
+    except Exception as e:
+        logger.warning(f"Email send failed (non-blocking): {e}")
+
     return {"message": "Requisition rejected", "pr_number": pr.pr_number}
 
 
@@ -349,6 +407,18 @@ async def convert_to_po(
     if pr.status != PRStatus.approved:
         raise HTTPException(status_code=400, detail="Only approved PRs can be converted to POs")
 
+    # Handle missing supplier — use preferred or pick first available
+    supplier_id = pr.preferred_supplier_id
+    if not supplier_id:
+        from app.models.supplier import Supplier
+        first_supplier = db.query(Supplier).first()
+        if not first_supplier:
+            raise HTTPException(
+                status_code=400,
+                detail="No suppliers exist. Please create a supplier first.",
+            )
+        supplier_id = first_supplier.id
+
     # Generate PO number
     year = datetime.utcnow().year
     po_count = db.query(PurchaseOrder).filter(
@@ -359,21 +429,42 @@ async def convert_to_po(
     # Create PO from PR
     po = PurchaseOrder(
         po_number=po_number,
-        supplier_id=pr.preferred_supplier_id,
-        created_by=pr.requested_by,
+        supplier_id=supplier_id,
+        created_by=user["clerk_id"],
         status=POStatus.draft,
         total_amount=pr.estimated_total,
         expected_delivery=pr.needed_by,
         notes=f"Auto-generated from {pr.pr_number}. {pr.notes or ''}",
     )
 
-    # Convert line items
+    # Convert line items — handle missing product_ids
     for li in pr.line_items:
+        product_id = li.product_id
+        if not product_id:
+            # Try to find product by name
+            from app.models.product import Product
+            product = db.query(Product).filter(
+                Product.name.ilike(f"%{li.item_name}%")
+            ).first()
+            if product:
+                product_id = product.id
+            else:
+                # Create a generic product for this line item
+                product = Product(
+                    sku=f"AUTO-{li.item_name[:20].upper().replace(' ', '-')}",
+                    name=li.item_name or "Unnamed Item",
+                    category=pr.category or "General",
+                    unit=li.unit or "pcs",
+                )
+                db.add(product)
+                db.flush()  # Get the ID
+                product_id = product.id
+
         po_line = POLineItem(
-            product_id=li.product_id,
+            product_id=product_id,
             quantity=li.quantity,
             unit_price=li.estimated_unit_price,
-            total_price=li.estimated_total,
+            total_price=li.quantity * li.estimated_unit_price,
         )
         po.line_items.append(po_line)
 

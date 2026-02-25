@@ -10,6 +10,7 @@ class POStatusEnum(str, Enum):
     pending_approval = "pending_approval"
     approved = "approved"
     sent = "sent"
+    partially_received = "partially_received"
     received = "received"
     cancelled = "cancelled"
 

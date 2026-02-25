@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field
 from uuid import UUID
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 
 class InventoryCreate(BaseModel):
@@ -30,3 +30,37 @@ class InventoryResponse(BaseModel):
     product_sku: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+# ─── Stock Movement Schemas ──────────────────────────────────
+
+class StockAdjustRequest(BaseModel):
+    """Request to adjust stock with a reason (logs a movement)."""
+    product_id: UUID
+    quantity: int  # positive or negative
+    type: str = "ADJUSTMENT"  # GOODS_IN, GOODS_OUT, ADJUSTMENT
+    reference_type: Optional[str] = None  # PO, PR, MANUAL
+    reference_id: Optional[UUID] = None
+    storage_location: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class StockMovementResponse(BaseModel):
+    id: UUID
+    product_id: UUID
+    type: str
+    quantity: int
+    reference_type: Optional[str] = None
+    reference_id: Optional[UUID] = None
+    performed_by: Optional[str] = None
+    storage_location: Optional[str] = None
+    notes: Optional[str] = None
+    stock_after: Optional[int] = None
+    created_at: Optional[datetime] = None
+
+    # Joined fields
+    product_name: Optional[str] = None
+    product_sku: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+

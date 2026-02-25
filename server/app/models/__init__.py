@@ -14,6 +14,7 @@ from app.models.category import Category
 from app.models.department import Department
 from app.models.approval_rule import ApprovalRule
 from app.models.purchase_requisition import PurchaseRequisition, PRLineItem
+from app.models.stock_movement import StockMovement
 
 __all__ = [
     "Product",
@@ -34,4 +35,5 @@ __all__ = [
     "ApprovalRule",
     "PurchaseRequisition",
     "PRLineItem",
+    "StockMovement",
 ]

@@ -89,6 +89,7 @@ export function useAICall<T>({
             try {
                 const result = await fn(controller.signal);
                 if (!isMounted.current) return;
+                setLoading(false);
                 onSuccess(result);
                 startCooldown();
                 return;

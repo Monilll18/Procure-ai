@@ -1,0 +1,9 @@
+{
+  "company_name": "ProcureAI Corp",
+  "currency": "INR",
+  "auto_approve_below": 5000.0,
+  "email_notifications": true,
+  "stock_alerts": true,
+  "approval_reminders": true,
+  "two_factor_auth": false
+}
