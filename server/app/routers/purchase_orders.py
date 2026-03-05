@@ -316,6 +316,18 @@ async def receive_goods(
         )
         db.add(movement)
 
+        # Deduct from supplier's available quantity in catalog
+        if line_item.product_id and po.supplier_id:
+            supplier_price = db.query(SupplierPrice).filter(
+                SupplierPrice.supplier_id == po.supplier_id,
+                SupplierPrice.product_id == line_item.product_id,
+                SupplierPrice.is_active == True,
+            ).first()
+            if supplier_price and supplier_price.available_quantity is not None:
+                supplier_price.available_quantity = max(
+                    0, supplier_price.available_quantity - recv.quantity_received
+                )
+
         received_items.append({
             "product_name": line_item.product.name if line_item.product else "Unknown",
             "quantity_received": recv.quantity_received,

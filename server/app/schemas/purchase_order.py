@@ -12,6 +12,9 @@ class POStatusEnum(str, Enum):
     sent = "sent"
     partially_received = "partially_received"
     received = "received"
+    inspection = "inspection"
+    invoiced = "invoiced"
+    paid = "paid"
     cancelled = "cancelled"
 
 

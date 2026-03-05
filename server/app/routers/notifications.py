@@ -40,14 +40,13 @@ async def list_notifications(
 
 
 @router.get("/unread-count")
-async def unread_count(user_id: str, db: Session = Depends(get_db)):
-    """Get count of unread notifications for a user."""
-    count = (
-        db.query(Notification)
-        .filter(Notification.user_id == user_id, Notification.is_read == False)
-        .count()
-    )
-    return {"unread_count": count}
+async def unread_count(user_id: Optional[str] = None, db: Session = Depends(get_db)):
+    """Get count of unread notifications. If user_id omitted, returns total unread."""
+    query = db.query(Notification).filter(Notification.is_read == False)
+    if user_id:
+        query = query.filter(Notification.user_id == user_id)
+    count = query.count()
+    return {"count": count}
 
 
 @router.post("/{notification_id}/read")
@@ -61,11 +60,12 @@ async def mark_as_read(notification_id: str, db: Session = Depends(get_db)):
     return {"message": "Marked as read"}
 
 
-@router.post("/mark-all-read")
-async def mark_all_read(user_id: str, db: Session = Depends(get_db)):
-    """Mark all notifications for a user as read."""
-    db.query(Notification).filter(
-        Notification.user_id == user_id, Notification.is_read == False
-    ).update({"is_read": True})
+@router.api_route("/mark-all-read", methods=["POST", "PATCH"])
+async def mark_all_read(user_id: Optional[str] = None, db: Session = Depends(get_db)):
+    """Mark all notifications as read. If user_id omitted, marks ALL."""
+    query = db.query(Notification).filter(Notification.is_read == False)
+    if user_id:
+        query = query.filter(Notification.user_id == user_id)
+    updated = query.update({"is_read": True})
     db.commit()
-    return {"message": "All notifications marked as read"}
+    return {"message": f"{updated} notifications marked as read"}

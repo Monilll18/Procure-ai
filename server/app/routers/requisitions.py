@@ -625,13 +625,55 @@ async def get_supplier_coverage(
 
     coverage = []
     for supplier in active_suppliers:
+        product_prices = []
+        supplier_total = 0
+
         if total_products > 0:
-            matching = db.query(SupplierPrice.product_id).filter(
-                SupplierPrice.supplier_id == supplier.id,
-                SupplierPrice.product_id.in_(product_ids),
-                SupplierPrice.is_active == True,
-            ).all()
-            matched = len({str(sp.product_id) for sp in matching})
+            for pid in product_ids:
+                sp = db.query(SupplierPrice).filter(
+                    SupplierPrice.supplier_id == supplier.id,
+                    SupplierPrice.product_id == pid,
+                    SupplierPrice.is_active == True,
+                ).first()
+
+                # Find the matching PR line item for quantity
+                li_qty = 1
+                li_name = "Unknown"
+                for li in pr.line_items:
+                    resolved_pid = li.product_id
+                    if not resolved_pid and li.item_name:
+                        prod = db.query(Product).filter(
+                            Product.name.ilike(f"%{li.item_name}%")
+                        ).first()
+                        if prod:
+                            resolved_pid = prod.id
+                    if str(resolved_pid) == str(pid):
+                        li_qty = li.quantity
+                        li_name = li.item_name or (db.query(Product).filter(Product.id == pid).first() or type('', (), {'name': 'Unknown'})).name
+                        break
+
+                if sp:
+                    line_total = sp.unit_price * li_qty
+                    supplier_total += line_total
+                    product_prices.append({
+                        "product_id": str(pid),
+                        "product_name": li_name,
+                        "unit_price": sp.unit_price,
+                        "quantity": li_qty,
+                        "line_total": round(line_total, 2),
+                        "available": True,
+                    })
+                else:
+                    product_prices.append({
+                        "product_id": str(pid),
+                        "product_name": li_name,
+                        "unit_price": None,
+                        "quantity": li_qty,
+                        "line_total": 0,
+                        "available": False,
+                    })
+
+            matched = len([p for p in product_prices if p["available"]])
         else:
             matched = 0
 
@@ -642,10 +684,12 @@ async def get_supplier_coverage(
             "products_total": total_products,
             "has_all": matched == total_products and total_products > 0,
             "has_none": matched == 0 and total_products > 0,
+            "product_prices": product_prices,
+            "supplier_total": round(supplier_total, 2),
         })
 
-    # Sort: suppliers with most coverage first
-    coverage.sort(key=lambda c: c["products_matched"], reverse=True)
+    # Sort: suppliers with most coverage first, then by lowest total price
+    coverage.sort(key=lambda c: (-c["products_matched"], c["supplier_total"]))
 
     return {"pr_id": pr_id, "total_products": total_products, "suppliers": coverage}
 

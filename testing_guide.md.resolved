@@ -1,0 +1,349 @@
+# AI Procurement System — Complete Testing Guide
+
+## 🔧 Prerequisites
+- Backend running: `uvicorn app.main:app --reload --host 0.0.0.0 --port 8000`
+- Frontend running: `npm run dev` (port 3000)
+- At least one admin user signed in
+
+---
+
+## Test 1: Supplier Onboarding & Catalog Setup
+
+**Goal:** Add a supplier with products in their catalog
+
+### Steps:
+1. Go to **Suppliers** page → Click **"Add Supplier"**
+2. Fill in: Name = "TechParts Ltd", Email, Phone, Rating = 4.5
+3. ✅ Check "Send Portal Invite" → Click Create
+4. Note the portal credentials shown (username/password)
+
+### Now set up their catalog via API (no catalog tab in UI yet):
+```bash
+# Get the supplier ID
+curl http://localhost:8000/api/suppliers/ | python3 -c "import json,sys; [print(s['id'], s['name']) for s in json.load(sys.stdin)]"
+
+# Add products to their catalog (replace IDs):
+curl -X POST http://localhost:8000/api/supplier-prices/ \
+  -H "Content-Type: application/json" \
+  -d '{
+    "supplier_id": "<SUPPLIER_ID>",
+    "product_id": "<PRODUCT_ID>",
+    "unit_price": 450.00,
+    "available_quantity": 100,
+    "lead_time_days": 5,
+    "is_active": true
+  }'
+```
+
+### Verify:
+```bash
+# Check supplier catalog
+curl http://localhost:8000/api/purchase-orders/supplier-catalog/<SUPPLIER_ID>
+```
+
+**Expected:** Supplier appears in list. Catalog shows products with prices.
+
+---
+
+## Test 2: Product Price Auto-Fill (Supplier Price Comparison)
+
+**Goal:** Verify that selecting a product in PR creation auto-fills the lowest price
+
+### Steps:
+1. Make sure at least 2 suppliers have the SAME product in their catalog at different prices
+2. Go to **Requests** page → Click **"Create Request"**
+3. In the line items section, click the product search field
+4. Type a product name (e.g., "Intel Core i9")
+5. Select the product from the dropdown
+
+### Expected:
+- ✅ Toast shows: "Price auto-filled: $XXX per unit" (the LOWEST price from all suppliers)
+- ✅ If no supplier carries it: "No supplier price found. Enter estimated price manually."
+- ❌ If you see the "no price found" message for a product that IS in a catalog → bug
+
+---
+
+## Test 3: Full PR → PO Lifecycle with Catalog Validation
+
+**Goal:** Test the complete requisition-to-order flow with supplier validation
+
+### Step 3a: Create & Submit PR (as Procurement Officer)
+1. **Requests** → Create Request
+2. Title: "Test Order - Server Parts"
+3. Add line items: select products from the picker (NOT free text)
+4. Click **Create** → then click **Submit for Approval**
+
+### Step 3b: Approve PR (as Manager)
+1. Switch to Manager account (or same admin)
+2. Go to **Approvals** page
+3. Find the PR → Click **Approve**
+
+### Step 3c: Convert to PO (as Manager)
+1. Go to **Requests** → find the approved PR
+2. Click **"Convert to PO"**
+3. **Supplier Picker opens** — verify:
+   - ✅ Each supplier shows availability badges (✅ 3/3, ⚠️ 1/3, ❌ 0/3)
+   - ✅ Suppliers with 0 matching products are **disabled** (grayed out, can't click)
+   - ✅ Suppliers with all products show green ✅
+4. Select a valid supplier → Click "Create Purchase Order"
+5. If partial match → verify **warning toast** appears
+
+### Step 3d: Approve & Send PO
+1. Go to **Orders** page → find the new PO
+2. Click **View** → Click **"Submit for Approval"**
+3. Go to **Approvals** → Approve the PO
+4. Go back to **Orders** → Click **"Send to Supplier"** tab → Send
+
+**Expected:** PO status goes Draft → Pending → Approved → Sent
+
+---
+
+## Test 4: Supplier Portal — Accept & Ship
+
+**Goal:** Test the supplier side of the flow
+
+### Steps:
+1. Open **`http://localhost:3000/supplier-portal/login`** (use incognito)
+2. Log in with the supplier credentials from Test 1
+3. Go to **Purchase Orders** → find the PO you sent
+4. Click **"Accept"**
+   - ✅ If supplier's catalog is missing some products → warning message appears
+5. Go to **Shipments** → Click **"Create Shipment"**
+6. Fill in carrier, tracking number, items shipped
+
+**Expected:** PO status changes to "Accepted" on buyer side
+
+---
+
+## Test 5: Goods Receipt & Stock Deduction
+
+**Goal:** Verify inventory increases AND supplier stock decreases when goods are received
+
+### Before:
+```bash
+# Check supplier's available quantity BEFORE
+curl http://localhost:8000/api/purchase-orders/supplier-catalog/<SUPPLIER_ID> | python3 -c "
+import json,sys
+for p in json.load(sys.stdin):
+    print(f\"{p['product_name']}: available={p.get('available_quantity','N/A')}\")"
+
+# Check buyer's inventory BEFORE
+curl http://localhost:8000/api/inventory/ | python3 -c "
+import json,sys
+for i in json.load(sys.stdin):
+    print(f\"{i['product_name']}: stock={i['current_stock']}\")"
+```
+
+### Steps:
+1. Go to **Orders** → open the PO (must be in Approved/Sent status)
+2. Click **"Receive Goods"** tab
+3. For each item, enter quantity received (e.g., 10 out of 50)
+4. Click **"Receive"**
+
+### After — Verify:
+```bash
+# Supplier's available_quantity should DECREASE by 10
+curl http://localhost:8000/api/purchase-orders/supplier-catalog/<SUPPLIER_ID>
+
+# Buyer's inventory stock should INCREASE by 10
+curl http://localhost:8000/api/inventory/
+
+# Stock movement should be logged
+curl http://localhost:8000/api/inventory/movements
+```
+
+**Expected:**
+- ✅ Buyer inventory: +10
+- ✅ Supplier catalog: -10
+- ✅ Stock movement logged as "GOODS_IN"
+- ✅ PO status: "Partially Received" (if not all received) or "Received" (if all received)
+
+---
+
+## Test 6: Reorder / Low Stock Alerts
+
+**Goal:** Verify the system flags low stock items
+
+### Setup:
+```bash
+# Set a product's min_stock to a high value so it triggers "Low" status
+curl -X PATCH http://localhost:8000/api/inventory/<INVENTORY_ID> \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -d '{"min_stock": 500}'
+```
+
+### Steps:
+1. Go to **Inventory** page
+2. Look for items with **"Low"** or **"Critical"** status badges
+3. Click the **"Low Stock"** KPI card at the top to filter
+4. Click **"Create Reorder"** button → redirects to PO page to create a new order
+
+### Verify:
+```bash
+# API: Get low stock alerts
+curl http://localhost:8000/api/inventory/alerts
+```
+
+**Expected:** Items below min_stock threshold show yellow/red badges
+
+---
+
+## Test 7: Stock Adjustment
+
+**Goal:** Test manual stock adjustments
+
+### Steps:
+1. Go to **Inventory** page
+2. Find any product → Click **"Adjust"** button
+3. Enter an adjustment: +20 (add stock) or -5 (remove stock)
+4. Click **"Apply Adjustment"**
+
+### Current Status:
+> [!WARNING]
+> The Adjust button currently shows an [alert()](file:///Users/commerciax/Desktop/AI_Procurement_sys/server/app/routers/inventory.py#70-80) dialog (not wired to API). This is Gap 1 from the audit. Once fixed, it will call the `POST /api/inventory/adjust` endpoint.
+
+### API Test (works now):
+```bash
+curl -X POST http://localhost:8000/api/inventory/adjust \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <TOKEN>" \
+  -d '{
+    "product_id": "<PRODUCT_ID>",
+    "quantity": 20,
+    "type": "ADJUSTMENT",
+    "notes": "Manual restock from warehouse"
+  }'
+```
+
+---
+
+## Test 8: Price Anomaly Detection
+
+**Goal:** Test if the system detects unusual prices
+
+### Steps:
+1. Go to **AI Insights** page
+
+### API Test:
+```bash
+# Check if a specific price is anomalous
+curl "http://localhost:8000/api/ai/price-anomaly?product_id=<PRODUCT_ID>&price=99999"
+
+# Batch check all recent prices
+curl http://localhost:8000/api/ai/batch-price-check
+```
+
+**Expected:** A price of $99,999 for a product that normally costs $450 should be flagged as anomalous
+
+---
+
+## Test 9: Supplier Auto-Rating / Scoring
+
+**Goal:** Test the AI scoring system that rates suppliers based on performance
+
+### How it works:
+The system scores suppliers on 4 factors:
+| Factor | Weight | How It's Calculated |
+|--------|--------|-------------------|
+| Price | 30% | Supplier's avg price vs market average |
+| Delivery | 30% | % of POs successfully delivered |
+| Quality | 25% | Star rating × 2 (converted to 10-point scale) |
+| Response | 15% | Based on lead_time_days |
+
+### API Test:
+```bash
+# Score a specific supplier for a specific product
+curl "http://localhost:8000/api/ai/score-supplier?supplier_id=<SUPPLIER_ID>&product_id=<PRODUCT_ID>"
+
+# Rank all suppliers for a product (best first)
+curl "http://localhost:8000/api/ai/rank-suppliers/<PRODUCT_ID>"
+```
+
+### To see scoring change:
+1. Complete several POs with a supplier (Accept → Ship → Receive)
+2. Re-run the scoring → delivery score should increase
+3. A supplier with late deliveries → delivery score drops
+4. A supplier with high prices → price score drops
+
+---
+
+## Test 10: Role-Based Access Control
+
+**Goal:** Verify each role can only do what they're supposed to
+
+### Test Matrix:
+
+| Action | Admin | Manager | Officer | Finance | Viewer |
+|--------|-------|---------|---------|---------|--------|
+| See Dashboard | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Create Product | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Delete Product | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Create Supplier | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Create PR | ✅ | ✅ | ✅ | ❌ | ❌ |
+| Approve PR/PO | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Create PO | ✅ | ✅ | ✅ | ❌ | ❌ |
+| See Analytics | ✅ | ✅ | ❌ | ✅ | ✅ |
+| See AI Insights | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Manage Settings | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Adjust Stock | ✅ | ✅ | ✅ | ❌ | ❌ |
+
+### Steps:
+1. Go to **Settings** → change a user's role to "viewer"
+2. Log in as that user → verify sidebar only shows allowed pages
+3. Try navigating to `/settings` directly → should see restricted access
+4. Change role to "procurement_officer" → verify they can create PRs but NOT approve
+
+---
+
+## Test 11: Fraud & Anomaly Detection
+
+**Goal:** Test if the system detects suspicious procurement patterns
+
+### API Test:
+```bash
+curl http://localhost:8000/api/ai/fraud-detection
+```
+
+### What it detects:
+- **Split orders:** Same user, same supplier, multiple orders just under approval limit within 7 days
+- **New supplier + large order:** First order from a new supplier exceeding $5,000
+- **Off-hours activity:** POs created before 6 AM or after 10 PM, or on weekends
+
+### How to trigger:
+1. Create several POs to the same supplier with amounts just under $500 within a week → should flag as split orders
+2. Add a new supplier → immediately create a $10,000 PO → should flag as suspicious
+
+---
+
+## Test 12: Supplier Portal — Catalog Management
+
+**Goal:** Test supplier's ability to manage their own catalog
+
+### Steps:
+1. Log into Supplier Portal → Go to **Catalog** page
+2. Add a new product to catalog with price and quantity
+3. Update an existing product's price
+4. Verify the changes reflect on the buyer side
+
+### Verify from buyer side:
+```bash
+curl http://localhost:8000/api/purchase-orders/supplier-catalog/<SUPPLIER_ID>
+```
+
+---
+
+## 🏁 Quick Smoke Test (5 minutes)
+
+Run through this minimal path to verify core flow works:
+
+1. ✅ Products page loads with products
+2. ✅ Suppliers page loads with suppliers
+3. ✅ Create a PR with a product from the picker → price auto-fills
+4. ✅ Submit PR → Approve in Approvals page
+5. ✅ Convert to PO → Supplier picker shows availability badges
+6. ✅ Submit PO → Approve → Send to Supplier
+7. ✅ Supplier portal login → Accept PO
+8. ✅ Receive goods on buyer side → Inventory increases
+9. ✅ Inventory page shows updated stock
+10. ✅ AI Insights page loads with data

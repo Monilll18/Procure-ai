@@ -126,9 +126,10 @@ export default function RequisitionsPage() {
     const fetchProductPrice = async (productId: string): Promise<number> => {
         if (priceCache.current[productId] !== undefined) return priceCache.current[productId];
         try {
-            const prices = await getSupplierPriceComparison(productId);
-            if (prices && prices.length > 0) {
-                const lowest = Math.min(...prices.map(p => p.unit_price));
+            const response = await getSupplierPriceComparison(productId);
+            const comparisons = response?.comparisons || [];
+            if (comparisons.length > 0) {
+                const lowest = Math.min(...comparisons.map(p => p.unit_price));
                 priceCache.current[productId] = lowest;
                 return lowest;
             }
@@ -777,7 +778,7 @@ export default function RequisitionsPage() {
             <Dialog open={showSupplierPicker} onOpenChange={(open) => {
                 if (!open) { setShowSupplierPicker(false); setConvertingPR(null); }
             }}>
-                <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+                <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <ArrowUpRight className="h-5 w-5 text-purple-400" />
@@ -813,20 +814,29 @@ export default function RequisitionsPage() {
                         </div>
                     )}
 
-                    {/* Supplier list */}
+                    {/* Supplier list — Price comparison (MakeMyTrip style) */}
                     <div className="space-y-2">
-                        <Label className="text-sm font-semibold">Available Suppliers</Label>
+                        <Label className="text-sm font-semibold">Compare Suppliers & Prices</Label>
+                        <p className="text-xs text-muted-foreground mb-2">
+                            💡 AI suggests a supplier, but <strong>you decide</strong>. Pick any supplier — the PO will use their catalog prices.
+                        </p>
                         {coverageLoading ? (
                             <div className="flex items-center justify-center py-6">
                                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                                <span className="ml-2 text-sm text-muted-foreground">Checking product availability...</span>
+                                <span className="ml-2 text-sm text-muted-foreground">Loading prices from all suppliers...</span>
                             </div>
                         ) : suppliers.filter(s => s.status === "active").length === 0 ? (
                             <p className="text-sm text-muted-foreground py-4 text-center">
                                 No active suppliers found. Create a supplier first.
                             </p>
-                        ) : (
-                            suppliers.filter(s => s.status === "active").map(supplier => {
+                        ) : (() => {
+                            const activeSups = suppliers.filter(s => s.status === "active");
+                            // Find lowest total among suppliers with all products
+                            const covWithAll = coverageData.filter(c => c.has_all && c.supplier_total > 0);
+                            const lowestTotal = covWithAll.length > 0 ? Math.min(...covWithAll.map(c => c.supplier_total)) : 0;
+                            const highestTotal = covWithAll.length > 0 ? Math.max(...covWithAll.map(c => c.supplier_total)) : 0;
+
+                            return activeSups.map(supplier => {
                                 const isAISuggested = convertingPR?.preferred_supplier_id === supplier.id;
                                 const isSelected = selectedSupplierId === supplier.id;
                                 const cov = coverageData.find(c => c.supplier_id === supplier.id);
@@ -834,6 +844,9 @@ export default function RequisitionsPage() {
                                 const hasAll = cov?.has_all || false;
                                 const matched = cov?.products_matched ?? 0;
                                 const total = cov?.products_total ?? 0;
+                                const supplierTotal = cov?.supplier_total ?? 0;
+                                const isLowest = hasAll && supplierTotal === lowestTotal && lowestTotal > 0;
+                                const savings = hasAll && highestTotal > 0 ? highestTotal - supplierTotal : 0;
 
                                 return (
                                     <button
@@ -847,9 +860,12 @@ export default function RequisitionsPage() {
                                                 ? "border-red-500/20 bg-red-500/5 opacity-60 cursor-not-allowed"
                                                 : isSelected
                                                     ? "border-purple-500 bg-purple-500/10 ring-1 ring-purple-500/30"
-                                                    : "border-border/50 hover:border-border hover:bg-muted/30"
+                                                    : isLowest
+                                                        ? "border-emerald-500/30 hover:border-emerald-500/50 hover:bg-emerald-500/5"
+                                                        : "border-border/50 hover:border-border hover:bg-muted/30"
                                         )}
                                     >
+                                        {/* Row 1: Name + Badges + PRICE */}
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-2">
                                                 <div className={cn(
@@ -861,13 +877,18 @@ export default function RequisitionsPage() {
                                                     {hasNone && <XCircle className="h-3 w-3 text-red-400" />}
                                                 </div>
                                                 <span className="font-medium">{supplier.name}</span>
-                                            </div>
-                                            <div className="flex items-center gap-1.5">
                                                 {isAISuggested && !hasNone && (
                                                     <Badge className="text-[10px] bg-purple-500/15 text-purple-400 border-purple-500/30">
                                                         <Sparkles className="h-2.5 w-2.5 mr-0.5" /> AI Pick
                                                     </Badge>
                                                 )}
+                                                {isLowest && !hasNone && (
+                                                    <Badge className="text-[10px] bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+                                                        💰 Lowest
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
                                                 {total > 0 && (
                                                     <Badge variant="outline" className={cn(
                                                         "text-[10px]",
@@ -875,7 +896,7 @@ export default function RequisitionsPage() {
                                                             hasNone ? "text-red-400 border-red-500/30" :
                                                                 "text-amber-400 border-amber-500/30"
                                                     )}>
-                                                        {hasAll ? "✅" : hasNone ? "❌" : "⚠️"} {matched}/{total} products
+                                                        {hasAll ? "✅" : hasNone ? "❌" : "⚠️"} {matched}/{total}
                                                     </Badge>
                                                 )}
                                                 <Badge variant="outline" className="text-[10px]">
@@ -883,14 +904,57 @@ export default function RequisitionsPage() {
                                                 </Badge>
                                             </div>
                                         </div>
-                                        <div className="mt-1.5 ml-6 flex gap-4 text-xs text-muted-foreground">
-                                            {hasNone && <span className="text-red-400">No matching products in catalog</span>}
-                                            {!hasNone && supplier.email && <span>{supplier.email}</span>}
-                                        </div>
+
+                                        {/* Row 2: Per-product prices & total */}
+                                        {!hasNone && cov?.product_prices && cov.product_prices.length > 0 && (
+                                            <div className="mt-2 ml-6">
+                                                {/* Per-product breakdown */}
+                                                <div className="grid gap-0.5">
+                                                    {cov.product_prices.map((pp, idx) => (
+                                                        <div key={idx} className="flex justify-between text-xs">
+                                                            <span className={cn("text-muted-foreground truncate max-w-[200px]", !pp.available && "line-through opacity-50")}>
+                                                                {pp.product_name} × {pp.quantity}
+                                                            </span>
+                                                            {pp.available ? (
+                                                                <span className="font-mono text-foreground">
+                                                                    ${pp.unit_price?.toFixed(2)} → <strong>${pp.line_total.toLocaleString()}</strong>
+                                                                </span>
+                                                            ) : (
+                                                                <span className="font-mono text-red-400 text-[10px]">Not available</span>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                {/* Total price row */}
+                                                <div className="flex justify-between items-center mt-1.5 pt-1.5 border-t border-border/30">
+                                                    <span className="text-xs font-semibold">Supplier Total</span>
+                                                    <div className="flex items-center gap-2">
+                                                        {savings > 10 && (
+                                                            <span className="text-[10px] text-emerald-400">
+                                                                Save ${savings.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                                                            </span>
+                                                        )}
+                                                        <span className={cn(
+                                                            "font-mono font-bold text-sm",
+                                                            isLowest ? "text-emerald-400" : "text-foreground"
+                                                        )}>
+                                                            ${supplierTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {hasNone && (
+                                            <div className="mt-1.5 ml-6 text-xs text-red-400">
+                                                No matching products in catalog
+                                            </div>
+                                        )}
                                     </button>
                                 );
-                            })
-                        )}
+                            });
+                        })()
+                        }
                     </div>
 
                     <p className="text-xs text-muted-foreground">

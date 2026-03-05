@@ -361,8 +361,16 @@ export interface SupplierPriceComparison {
     value_score: number;
 }
 
+export interface SupplierPriceComparisonResponse {
+    product_id: string;
+    product_name: string;
+    supplier_count: number;
+    price_range: { min: number; max: number; avg: number };
+    comparisons: SupplierPriceComparison[];
+}
+
 export const getSupplierPriceComparison = (productId: string) =>
-    apiFetch<SupplierPriceComparison[]>(`/api/supplier-prices/compare/${productId}`);
+    apiFetch<SupplierPriceComparisonResponse>(`/api/supplier-prices/compare/${productId}`);
 
 // ─── Supplier Price Updates (Buyer Review) ──────────────────────────
 
@@ -674,6 +682,15 @@ export interface SupplierCoverageItem {
     products_total: number;
     has_all: boolean;
     has_none: boolean;
+    product_prices: {
+        product_id: string;
+        product_name: string;
+        unit_price: number | null;
+        quantity: number;
+        line_total: number;
+        available: boolean;
+    }[];
+    supplier_total: number;
 }
 
 export const getSupplierCoverage = (prId: string) =>

@@ -37,7 +37,8 @@ const INVOICE_MAX_CHARS = 15000;
 const STATUS_LABELS: Record<string, string> = {
     draft: "Draft", pending_approval: "Pending Approval",
     approved: "Approved", sent: "Sent", partially_received: "Partially Received",
-    received: "Received", cancelled: "Cancelled",
+    received: "Received", inspection: "Inspection", invoiced: "Invoiced",
+    paid: "Paid", cancelled: "Cancelled",
 };
 
 export default function PurchaseOrdersPage() {
