@@ -10,14 +10,21 @@ pydantic-settings
 PyJWT
 cryptography
 
-# AI & LLM
+# AI & ML
 zhipuai
-sniffio
+groq
+google-generativeai
 scikit-learn
 pandas
 numpy
 
-# Document AI (Wave 4)
-# pytesseract
-# Pillow
-# PyPDF2
+# Auth & Security
+passlib[bcrypt]
+bcrypt
+python-jose[cryptography]
+
+# Utilities
+slowapi
+reportlab
+resend
+sniffio
