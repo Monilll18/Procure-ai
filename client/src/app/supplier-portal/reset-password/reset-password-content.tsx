@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,11 +11,12 @@ import { toast } from "sonner";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-export function ResetPasswordContent() {
-    const router = useRouter();
-    const searchParams = useSearchParams();
-    const tokenFromUrl = searchParams.get("token");
+interface Props {
+    tokenFromUrl: string;
+}
 
+export function ResetPasswordContent({ tokenFromUrl }: Props) {
+    const router = useRouter();
     const [step, setStep] = useState<"request" | "reset">(tokenFromUrl ? "reset" : "request");
     const [email, setEmail] = useState("");
     const [requesting, setRequesting] = useState(false);

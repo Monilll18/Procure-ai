@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,12 +11,13 @@ import {
     supplierActivate, setSupplierToken, setStoredSupplierUser,
 } from "@/lib/supplier-api";
 
-export function SupplierActivateContent() {
-    const router = useRouter();
-    const searchParams = useSearchParams();
-    const token = searchParams.get("token") || "";
-    const isChangePassword = searchParams.get("change") === "1";
+interface Props {
+    token: string;
+    isChangePassword: boolean;
+}
 
+export function SupplierActivateContent({ token, isChangePassword }: Props) {
+    const router = useRouter();
     const [newPassword, setNewPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
     const [loading, setLoading] = useState(false);
@@ -164,7 +165,7 @@ export function SupplierActivateContent() {
                                     ) : (
                                         <>
                                             <ShieldCheck className="mr-2 h-4 w-4" />
-                                            Activate &amp; Continue
+                                            Activate & Continue
                                         </>
                                     )}
                                 </Button>
