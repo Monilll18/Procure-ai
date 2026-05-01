@@ -1,53 +1,103 @@
 "use client";
 
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { ModeToggle } from "@/components/ThemeToggle";
-import { Menu, X } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Menu, X } from "lucide-react";
+import { Instrument_Serif } from "next/font/google";
 import { SignInButton, SignUpButton, SignedIn, SignedOut, UserButton } from "@clerk/nextjs";
+
+const instrument = Instrument_Serif({
+    subsets: ["latin"],
+    weight: ["400"],
+    variable: "--font-instrument",
+});
+
+const NAV_LINKS = [
+    { name: "Features", href: "#features" },
+    { name: "Testimonials", href: "#testimonials" },
+    { name: "Pricing", href: "#pricing" },
+    { name: "FAQ", href: "#faq" },
+];
 
 export function Navbar() {
     const [isOpen, setIsOpen] = useState(false);
+    const [scrolled, setScrolled] = useState(false);
+
+    useEffect(() => {
+        const handleScroll = () => {
+            setScrolled(window.scrollY > 20);
+        };
+        window.addEventListener("scroll", handleScroll);
+        return () => window.removeEventListener("scroll", handleScroll);
+    }, []);
 
     return (
-        <nav className="fixed top-0 w-full z-50 glass">
-            <div className="container mx-auto flex items-center justify-between px-6 h-16">
+        <nav className={`fixed top-0 w-full z-50 transition-colors duration-300 ${scrolled ? "bg-background shadow-md border-b border-white/5" : "bg-transparent"}`}>
+            <style jsx>{`
+                .liquid-glass {
+                    background: rgba(255, 255, 255, 0.01);
+                    background-blend-mode: luminosity;
+                    backdrop-filter: blur(4px);
+                    -webkit-backdrop-filter: blur(4px);
+                    border: none;
+                    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+                    position: relative;
+                    overflow: hidden;
+                }
+                .liquid-glass::before {
+                    content: '';
+                    position: absolute;
+                    inset: 0;
+                    border-radius: inherit;
+                    padding: 1.4px;
+                    background: linear-gradient(180deg,
+                        rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.15) 20%,
+                        rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%,
+                        rgba(255,255,255,0.15) 80%, rgba(255,255,255,0.45) 100%);
+                    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+                    -webkit-mask-composite: xor;
+                    mask-composite: exclude;
+                    pointer-events: none;
+                }
+            `}</style>
+            <div className="relative z-10 flex flex-row items-center justify-between px-8 py-6 max-w-7xl mx-auto">
                 {/* Logo */}
-                <Link href="/" className="flex items-center gap-2 font-bold text-xl tracking-tight text-foreground">
-                    <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground">
-                        AI
-                    </div>
-                    <span>ProcureAI</span>
+                <Link href="/" className={`${instrument.className} text-3xl tracking-tight text-foreground flex items-baseline`}>
+                    Procure AI<sup className="text-xs ml-1">®</sup>
                 </Link>
 
-                {/* Desktop Nav */}
+                {/* Desktop Nav Links */}
                 <div className="hidden md:flex items-center gap-8">
-                    <Link href="#features" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">Features</Link>
-                    <Link href="#testimonials" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">Testimonials</Link>
-                    <Link href="#pricing" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">Pricing</Link>
-                    <Link href="#faq" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">FAQ</Link>
+                    {NAV_LINKS.map((link) => (
+                        <Link 
+                            key={link.name} 
+                            href={link.href} 
+                            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                            {link.name}
+                        </Link>
+                    ))}
                 </div>
 
-                {/* Actions */}
-                <div className="hidden md:flex items-center gap-4">
-                    <ModeToggle />
-
-                    {/* Show auth buttons when signed out */}
+                {/* Actions & CTA */}
+                <div className="hidden md:flex items-center gap-6">
                     <SignedOut>
                         <SignInButton mode="modal">
-                            <Button variant="ghost" className="text-muted-foreground hover:text-foreground">Log in</Button>
+                            <button className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                                Log in
+                            </button>
                         </SignInButton>
                         <SignUpButton mode="modal">
-                            <Button className="font-semibold shadow-lg shadow-primary/25">Get Started</Button>
+                            <button className="liquid-glass rounded-full px-8 py-2.5 text-sm text-foreground transition-transform duration-300 hover:scale-[1.03] cursor-pointer">
+                                Sign Up
+                            </button>
                         </SignUpButton>
                     </SignedOut>
 
-                    {/* Show user button + dashboard link when signed in */}
                     <SignedIn>
-                        <Link href="/dashboard">
-                            <Button variant="ghost" className="text-muted-foreground hover:text-foreground">Dashboard</Button>
+                        <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground transition-colors mr-2">
+                            Dashboard
                         </Link>
                         <UserButton afterSignOutUrl="/" />
                     </SignedIn>
@@ -66,26 +116,37 @@ export function Navbar() {
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
                         exit={{ opacity: 0, height: 0 }}
-                        className="md:hidden bg-background border-b border-border"
+                        className="md:hidden bg-background/95 backdrop-blur-md border-b border-border/50"
                     >
                         <div className="flex flex-col p-6 space-y-4">
-                            <Link href="#features" onClick={() => setIsOpen(false)} className="text-lg font-medium text-foreground">Features</Link>
-                            <Link href="#pricing" onClick={() => setIsOpen(false)} className="text-lg font-medium text-foreground">Pricing</Link>
-                            <Link href="#faq" onClick={() => setIsOpen(false)} className="text-lg font-medium text-foreground">FAQ</Link>
-                            <div className="h-px bg-border my-2" />
+                            {NAV_LINKS.map((link) => (
+                                <Link 
+                                    key={link.name} 
+                                    href={link.href} 
+                                    onClick={() => setIsOpen(false)} 
+                                    className="text-lg font-medium text-foreground"
+                                >
+                                    {link.name}
+                                </Link>
+                            ))}
+                            <div className="h-px bg-border/50 my-2" />
 
                             <SignedOut>
                                 <SignInButton mode="modal">
-                                    <Button variant="outline" className="w-full justify-start">Log in</Button>
+                                    <button className="text-left text-lg font-medium text-foreground py-2">
+                                        Log in
+                                    </button>
                                 </SignInButton>
                                 <SignUpButton mode="modal">
-                                    <Button className="w-full">Get Started</Button>
+                                    <button className="liquid-glass rounded-full px-8 py-2.5 text-sm text-foreground transition-transform duration-300 hover:scale-[1.03] cursor-pointer mt-2 w-full">
+                                        Sign Up
+                                    </button>
                                 </SignUpButton>
                             </SignedOut>
 
                             <SignedIn>
-                                <Link href="/dashboard" onClick={() => setIsOpen(false)}>
-                                    <Button variant="outline" className="w-full">Dashboard</Button>
+                                <Link href="/dashboard" onClick={() => setIsOpen(false)} className="text-lg font-medium text-foreground py-2">
+                                    Dashboard
                                 </Link>
                             </SignedIn>
                         </div>

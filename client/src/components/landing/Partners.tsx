@@ -1,35 +1,39 @@
 "use client";
 
-import { Marquee } from "@/components/ui/marquee";
-import { Combine, Command, Box, Hexagon, Layers, Aperture } from "lucide-react";
+import { AnimatedCarousel } from "@/components/ui/logo-carousel";
 
-const partners = [
-    { name: "Acme Corp", icon: Combine },
-    { name: "GlobalTech", icon: Command },
-    { name: "CubeSystems", icon: Box },
-    { name: "HexaLab", icon: Hexagon },
-    { name: "StackSoft", icon: Layers },
-    { name: "ApertureScience", icon: Aperture },
+const partnerLogos = [
+  { src: "https://cdn.worldvectorlogo.com/logos/react-2.svg", alt: "React" },
+  { src: "https://cdn.worldvectorlogo.com/logos/next-js.svg", alt: "Next.js" },
+  { src: "https://cdn.worldvectorlogo.com/logos/vercel.svg", alt: "Vercel" },
+  { src: "https://cdn.worldvectorlogo.com/logos/typescript.svg", alt: "TypeScript" },
+  { src: "https://cdn.worldvectorlogo.com/logos/tailwindcss.svg", alt: "Tailwind CSS" },
+  { src: "https://cdn.worldvectorlogo.com/logos/stripe-4.svg", alt: "Stripe" },
+  { src: "https://cdn.worldvectorlogo.com/logos/notion-2.svg", alt: "Notion" },
+  { src: "https://cdn.worldvectorlogo.com/logos/github-icon-1.svg", alt: "GitHub" },
+  { src: "https://cdn.worldvectorlogo.com/logos/figma-icon-one-color.svg", alt: "Figma" },
+  { src: "https://cdn.worldvectorlogo.com/logos/framer-motion.svg", alt: "Framer Motion" },
+  { src: "https://cdn.worldvectorlogo.com/logos/storybook-1.svg", alt: "Storybook" },
+  { src: "https://cdn.worldvectorlogo.com/logos/sanity.svg", alt: "Sanity" },
 ];
 
 export function Partners() {
-    const items = partners.map((p, i) => (
-        <div key={i} className="flex items-center gap-3 px-8">
-            <p.icon className="h-8 w-8 text-muted-foreground/50" />
-            <span className="text-xl font-bold text-muted-foreground/50">{p.name}</span>
-        </div>
-    ));
-
-    return (
-        <section className="py-12 bg-background border-b border-border/40">
-            <div className="container mx-auto px-6 mb-8 text-center">
-                <p className="text-sm font-medium text-muted-foreground">TRUSTED BY INNOVATIVE TEAMS AT</p>
-            </div>
-            <div className="relative flex h-20 w-full flex-col items-center justify-center overflow-hidden antialiased">
-                <div className="absolute left-0 top-0 bottom-0 w-20 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none" />
-                <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
-                <Marquee items={items} direction="left" speed="normal" className="w-full text-foreground" />
-            </div>
-        </section>
-    );
+  return (
+    <section className="bg-background border-y border-border/40">
+      <AnimatedCarousel 
+        title="Trusted by Innovative Teams"
+        logos={partnerLogos.map(logo => logo.src)}
+        autoPlay={true}
+        autoPlayInterval={3000}
+        itemsPerViewMobile={3}
+        itemsPerViewDesktop={6}
+        logoContainerWidth="w-40"
+        logoContainerHeight="h-20"
+        logoImageWidth="w-auto"
+        logoImageHeight="h-10"
+        padding="py-16"
+        spacing="gap-12"
+      />
+    </section>
+  );
 }

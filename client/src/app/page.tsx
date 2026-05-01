@@ -1,12 +1,13 @@
 import { Navbar } from "@/components/landing/Navbar";
 import { Hero } from "@/components/landing/Hero";
 import { Features } from "@/components/landing/Features";
-import { Pricing } from "@/components/landing/Pricing";
 import { Testimonials } from "@/components/landing/Testimonials";
 import { FAQ } from "@/components/landing/FAQ";
 import { Footer } from "@/components/landing/Footer";
 import { Partners } from "@/components/landing/Partners";
 import { ThemeSelector } from "@/components/ThemeSelector";
+import { Pricing } from "@/components/landing/Pricing";
+import { Prism } from "@/components/landing/Prism";
 
 export default function Home() {
   return (
@@ -19,6 +20,7 @@ export default function Home() {
       <Testimonials />
       <Pricing />
       <FAQ />
+      <Prism />
       <Footer />
     </main>
   );

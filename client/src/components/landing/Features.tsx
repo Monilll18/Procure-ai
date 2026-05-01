@@ -1,116 +1,163 @@
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Brain, Zap, BarChart3, Lock, Globe, Layers } from "lucide-react";
-import { motion, Variants } from "framer-motion";
+import { Brain, Zap, Shield, ArrowRight } from "lucide-react";
+import { Instrument_Serif } from "next/font/google";
+import ScrollRevealText from "@/components/ui/ScrollRevealText";
 
-const features = [
+const instrument = Instrument_Serif({
+    subsets: ["latin"],
+    weight: ["400"],
+    variable: "--font-instrument",
+});
+
+const featureCards = [
     {
-        title: "AI-Powered Insights",
-        description: "Get real-time actionable insights on spending patterns and savings opportunities.",
-        icon: Brain,
+        Icon: Brain,
+        title: "AI-Powered Spend Intelligence",
+        subtitle: "See what others miss",
+        description:
+            "Real-time AI analysis surfaces hidden savings, flags anomalies, and generates actionable recommendations across every category — automatically.",
+        image: "/features/ai-insights.png",
+        accent: "from-blue-500/20 to-violet-500/20",
+        border: "border-blue-500/30",
+        iconBg: "bg-blue-500/10",
+        iconColor: "text-blue-400",
+        stats: [
+            { label: "Avg. Savings Found", value: "32%" },
+            { label: "Time to Insight", value: "<2s" },
+        ],
     },
     {
-        title: "Automated Workflows",
-        description: "Streamline approvals and purchase orders with intelligent automation rules.",
-        icon: Zap,
+        Icon: Zap,
+        title: "Automated Approval Workflows",
+        subtitle: "From days to minutes",
+        description:
+            "Intelligent routing adapts to your org hierarchy. Auto-escalation, parallel approvals, and conditional logic — no bottleneck goes unresolved.",
+        image: "/features/automation.png",
+        accent: "from-amber-500/20 to-orange-500/20",
+        border: "border-amber-500/30",
+        iconBg: "bg-amber-500/10",
+        iconColor: "text-amber-400",
+        stats: [
+            { label: "Approval Speed", value: "12x faster" },
+            { label: "Manual Steps Removed", value: "87%" },
+        ],
     },
     {
-        title: "Advanced Analytics",
-        description: "Visualize data with customizable dashboards and granular reporting.",
-        icon: BarChart3,
-    },
-    {
-        title: "Enterprise Security",
-        description: "Bank-grade encryption and compliance with global security standards.",
-        icon: Lock,
-    },
-    {
-        title: "Global Sourcing",
-        description: "Connect with verified suppliers worldwide and manage multi-currency transactions.",
-        icon: Globe,
-    },
-    {
-        title: "Seamless Integration",
-        description: "Integrate effortlessly with your existing ERP and financial systems.",
-        icon: Layers,
+        Icon: Shield,
+        title: "3-Way Invoice Matching",
+        subtitle: "Zero discrepancies slip through",
+        description:
+            "Automatic cross-validation of Purchase Orders, Invoices, and Goods Receipts. AI flags mismatches instantly, saving hours of manual reconciliation.",
+        image: "/features/matching.png",
+        accent: "from-emerald-500/20 to-green-500/20",
+        border: "border-emerald-500/30",
+        iconBg: "bg-emerald-500/10",
+        iconColor: "text-emerald-400",
+        stats: [
+            { label: "Match Accuracy", value: "99.7%" },
+            { label: "Fraud Caught", value: "$2.4M+" },
+        ],
     },
 ];
 
-const container: Variants = {
-    hidden: { opacity: 0 },
-    show: {
-        opacity: 1,
-        transition: {
-            staggerChildren: 0.1
-        }
-    }
-};
-
-const item: Variants = {
-    hidden: { opacity: 0, y: 20 },
-    show: {
-        opacity: 1,
-        y: 0,
-        transition: {
-            type: "spring",
-            stiffness: 50,
-            damping: 20
-        }
-    }
-};
-
 export function Features() {
     return (
-        <section id="features" className="py-24 bg-secondary/5 relative overflow-hidden">
-            {/* Background decoration */}
-            <div className="absolute top-0 right-0 w-1/3 h-1/3 bg-primary/5 blur-[100px] rounded-full pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-1/3 h-1/3 bg-secondary/10 blur-[100px] rounded-full pointer-events-none" />
-
-            <div className="container mx-auto px-6">
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.6 }}
-                    viewport={{ once: true }}
-                    className="text-center mb-16 max-w-2xl mx-auto"
+        <section id="features" className="relative bg-[#010101]">
+            {/* Section header */}
+            <div className="container mx-auto px-6 pt-24 pb-16 text-center max-w-3xl">
+                <div className="inline-flex items-center justify-center px-4 py-1.5 rounded-full border border-white/10 bg-white/[0.03] text-xs font-semibold text-zinc-400 mb-6 backdrop-blur-sm tracking-wider uppercase">
+                    Platform Capabilities
+                </div>
+                <ScrollRevealText
+                    className={`${instrument.className} text-4xl md:text-6xl lg:text-7xl font-normal text-white mb-6 leading-[0.95] tracking-[-1px]`}
                 >
-                    <div className="inline-flex items-center justify-center px-3 py-1 rounded-full border border-border bg-background/50 text-xs font-medium text-muted-foreground mb-4 backdrop-blur-sm">
-                        POWERFUL CAPABILITIES
-                    </div>
-                    <h2 className="text-3xl md:text-5xl font-bold text-foreground mb-6 leading-tight">
-                        Everything you need to <span className="text-gradient">optimize procurement</span>
-                    </h2>
-                    <p className="text-muted-foreground text-lg">
-                        Built for modern teams who demand speed, accuracy, and intelligence in their purchasing process.
-                    </p>
-                </motion.div>
+                    Everything you need to optimize procurement
+                </ScrollRevealText>
+                <p className="text-zinc-400 text-lg">
+                    Explore the core capabilities that set ProcureAI apart.
+                </p>
+            </div>
 
-                <motion.div
-                    variants={container}
-                    initial="hidden"
-                    whileInView="show"
-                    viewport={{ once: true, margin: "-100px" }}
-                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
-                >
-                    {features.map((feature, index) => (
-                        <motion.div key={index} variants={item}>
-                            <Card className="h-full border-border/50 bg-background/50 backdrop-blur-sm hover:border-primary/50 transition-all duration-300 hover:shadow-lg hover:-translate-y-1 group">
-                                <CardHeader>
-                                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
-                                        <feature.icon className="h-6 w-6 text-primary" />
+            {/* Sticky stack cards */}
+            <div className="relative pb-24">
+                {featureCards.map((feature, idx) => (
+                    <div
+                        key={idx}
+                        className="sticky"
+                        style={{ top: `${80 + idx * 24}px` }}
+                    >
+                        <div className="container mx-auto px-4 md:px-6 max-w-5xl pb-8">
+                            <div
+                                className={`rounded-2xl border ${feature.border} bg-[#0a0a0a] overflow-hidden shadow-2xl`}
+                                style={{
+                                    boxShadow: "0 25px 60px rgba(0,0,0,0.5)",
+                                }}
+                            >
+                                <div className="grid grid-cols-1 md:grid-cols-2">
+                                    {/* Left: Content */}
+                                    <div className="flex flex-col justify-center p-8 md:p-12 gap-5">
+                                        <div className="flex items-center gap-3">
+                                            <div
+                                                className={`w-11 h-11 rounded-xl ${feature.iconBg} flex items-center justify-center flex-shrink-0`}
+                                            >
+                                                <feature.Icon
+                                                    className={`w-5 h-5 ${feature.iconColor}`}
+                                                />
+                                            </div>
+                                            <span className="text-xs font-medium text-zinc-400 uppercase tracking-widest">
+                                                {feature.subtitle}
+                                            </span>
+                                        </div>
+
+                                        <div>
+                                            <h3 className="text-2xl md:text-3xl font-bold text-white mb-3 leading-tight">
+                                                {feature.title}
+                                            </h3>
+                                            <p className="text-zinc-400 text-sm md:text-base leading-relaxed">
+                                                {feature.description}
+                                            </p>
+                                        </div>
+
+                                        <div className="flex gap-8 mt-1">
+                                            {feature.stats.map((stat, si) => (
+                                                <div key={si}>
+                                                    <div className="text-2xl md:text-3xl font-bold text-white">
+                                                        {stat.value}
+                                                    </div>
+                                                    <div className="text-xs text-zinc-500 mt-1">
+                                                        {stat.label}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <button className="inline-flex items-center gap-2 text-sm font-medium text-zinc-300 hover:text-white transition-colors w-fit group mt-2">
+                                            Learn more
+                                            <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                                        </button>
                                     </div>
-                                    <CardTitle className="text-xl">{feature.title}</CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                    <CardDescription className="text-base text-muted-foreground">
-                                        {feature.description}
-                                    </CardDescription>
-                                </CardContent>
-                            </Card>
-                        </motion.div>
-                    ))}
-                </motion.div>
+
+                                    {/* Right: Image */}
+                                    <div
+                                        className={`relative bg-gradient-to-br ${feature.accent} overflow-hidden min-h-[260px] md:min-h-[360px]`}
+                                    >
+                                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.04)_0%,transparent_70%)]" />
+                                        <img
+                                            src={feature.image}
+                                            alt={feature.title}
+                                            className="absolute inset-0 w-full h-full object-cover object-center"
+                                            loading="lazy"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+
+                {/* Spacer so the sticky cards have room to stack */}
+                <div style={{ height: "40vh" }} aria-hidden />
             </div>
         </section>
     );

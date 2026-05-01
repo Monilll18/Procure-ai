@@ -23,6 +23,11 @@ const themes = [
 export function ThemeSelector() {
     const [activeTheme, setActiveTheme] = useState("");
     const [performanceMode, setPerformanceMode] = useState(false);
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     useEffect(() => {
         // Clean up all theme classes first
@@ -35,6 +40,8 @@ export function ThemeSelector() {
             document.body.classList.add(activeTheme);
         }
     }, [activeTheme]);
+
+    if (!mounted) return null;
 
     return (
         <div className="fixed bottom-24 right-6 z-40">
