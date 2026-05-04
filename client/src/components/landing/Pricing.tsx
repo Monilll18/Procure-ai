@@ -9,6 +9,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import { Instrument_Serif } from "next/font/google";
 import ScrollRevealText from "@/components/ui/ScrollRevealText";
 import { GlowCard } from "@/components/ui/spotlight-card";
+import Link from "next/link";
 
 const instrument = Instrument_Serif({
     subsets: ["latin"],
@@ -20,7 +21,7 @@ const plans = [
     {
         name: "Starter",
         monthlyPrice: "$29",
-        yearlyPrice: "$19",
+        yearlyPrice: "$199",
         desc: "Perfect for small teams getting started.",
         features: ["User analytics", "Growth tracking", "Real-time reporting", "1 Project"],
         popular: false
@@ -28,7 +29,7 @@ const plans = [
     {
         name: "Growth",
         monthlyPrice: "$79",
-        yearlyPrice: "$59",
+        yearlyPrice: "$599",
         desc: "Advanced analytics for scaling businesses.",
         features: ["Everything in Starter", "Funnel analysis", "Custom events", "Priority support", "5 Projects"],
         popular: true
@@ -36,7 +37,7 @@ const plans = [
     {
         name: "Enterprise",
         monthlyPrice: "$199",
-        yearlyPrice: "$159",
+        yearlyPrice: "$1599",
         desc: "Complete analytics solution for large orgs.",
         features: ["Everything in Growth", "SSO & SAML", "Dedicated manager", "Unlimited Projects", "Raw data access"],
         popular: false
@@ -122,7 +123,7 @@ function TiltPricingCard({ plan, index, isYearly }: { plan: typeof plans[number]
 
                         <div className="mb-6">
                             <span className="text-4xl font-bold text-white">{isYearly ? plan.yearlyPrice : plan.monthlyPrice}</span>
-                            <span className="text-zinc-500">/month</span>
+                            <span className="text-zinc-500">/{isYearly ? "year" : "month"}</span>
                         </div>
 
                         <ul className="space-y-4 mb-8 flex-1">
@@ -134,16 +135,18 @@ function TiltPricingCard({ plan, index, isYearly }: { plan: typeof plans[number]
                             ))}
                         </ul>
 
-                        <Button
-                            className={`w-full mt-auto ${
-                                plan.popular
-                                    ? "bg-zinc-100 hover:bg-zinc-200 text-zinc-900 border-none"
-                                    : "bg-zinc-800 text-zinc-100 hover:bg-zinc-700 border-none"
-                            }`}
-                            variant={plan.popular ? "default" : "outline"}
-                        >
-                            Get Started
-                        </Button>
+                        <Link href="/sign-up" className="w-full mt-auto block">
+                            <Button
+                                className={`w-full ${
+                                    plan.popular
+                                        ? "bg-zinc-100 hover:bg-zinc-200 text-zinc-900 border-none"
+                                        : "bg-zinc-800 text-zinc-100 hover:bg-zinc-700 border-none"
+                                }`}
+                                variant={plan.popular ? "default" : "outline"}
+                            >
+                                Get Started
+                            </Button>
+                        </Link>
                     </motion.div>
                 </GlowCard>
             </motion.div>
@@ -290,6 +293,9 @@ export function Pricing() {
                             className="data-[state=checked]:bg-zinc-100 data-[state=unchecked]:bg-zinc-800 [&>span]:data-[state=checked]:bg-zinc-900 [&>span]:data-[state=unchecked]:bg-zinc-400"
                         />
                         <span className={isYearly ? "text-white" : "text-zinc-400"}>Yearly</span>
+                        <Badge className="ml-2 bg-green-500/10 text-green-400 hover:bg-green-500/20 border-green-500/30 transition-colors">
+                            Save up to 42%
+                        </Badge>
                     </div>
                 </div>
 

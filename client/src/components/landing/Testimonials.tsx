@@ -5,8 +5,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Marquee } from "@/components/ui/3d-testimonials";
 import { Instrument_Serif } from "next/font/google";
 import ScrollRevealText from "@/components/ui/ScrollRevealText";
-import { cn } from "@/lib/utils";
-import { AnimatedGridPattern } from "@/components/ui/animated-grid-pattern";
+import ClickSpark from "@/components/ui/ClickSpark";
+
 
 const instrument = Instrument_Serif({
     subsets: ["latin"],
@@ -76,70 +76,73 @@ function TestimonialCard({ img, name, title, quote, avatar }: (typeof testimonia
 
 export function Testimonials() {
     return (
-        <section id="testimonials" className="relative z-10 py-24 bg-background overflow-hidden flex flex-col items-center justify-center">
-            <AnimatedGridPattern
-                numSquares={30}
-                maxOpacity={0.1}
-                duration={3}
-                repeatDelay={1}
-                className={cn(
-                    "[mask-image:radial-gradient(500px_circle_at_center,white,transparent)]",
-                    "inset-x-0 inset-y-[-30%] h-[200%] skew-y-12"
-                )}
-            />
-            <div className="container mx-auto px-6 mb-16 text-center relative z-20">
-                <div className="inline-flex items-center justify-center px-3 py-1 rounded-full border border-border bg-muted/50 text-xs font-medium text-muted-foreground mb-4">
-                    TESTIMONIALS
+        <ClickSpark sparkColor="#fff" sparkSize={10} sparkRadius={15} sparkCount={8} duration={400}>
+            <section id="testimonials" className="relative z-10 py-24 bg-[#010101] overflow-hidden flex flex-col items-center justify-center">
+                {/* CSS Static Grid Background - Zero JS Overhead */}
+                <div 
+                    className="absolute inset-0 z-0 opacity-[0.05] pointer-events-none"
+                    style={{
+                        backgroundImage: "linear-gradient(to right, white 1px, transparent 1px), linear-gradient(to bottom, white 1px, transparent 1px)",
+                        backgroundSize: "60px 60px",
+                        maskImage: "radial-gradient(circle at center, black, transparent 80%)",
+                        WebkitMaskImage: "radial-gradient(circle at center, black, transparent 80%)",
+                        transform: "skewY(-12deg) scale(1.5)",
+                    }}
+                />
+                <div className="container mx-auto px-6 mb-16 text-center relative z-20">
+                    <div className="inline-flex items-center justify-center px-3 py-1 rounded-full border border-border bg-muted/50 text-xs font-medium text-muted-foreground mb-4">
+                        TESTIMONIALS
+                    </div>
+                    <ScrollRevealText className={`${instrument.className} text-5xl md:text-7xl font-normal text-foreground mb-6 leading-[0.95] tracking-[-1px]`}>
+                        Loved by thousands
+                    </ScrollRevealText>
+                    <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+                        See what our customers are saying about their experience with ProcureAI.
+                    </p>
                 </div>
-                <ScrollRevealText className={`${instrument.className} text-5xl md:text-7xl font-normal text-foreground mb-6 leading-[0.95] tracking-[-1px]`}>
-                    Loved by thousands
-                </ScrollRevealText>
-                <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-                    See what our customers are saying about their experience with ProcureAI.
-                </p>
-            </div>
 
-            <div className="flex justify-center w-full px-4 md:px-0">
-               <div className="relative flex h-[500px] w-full max-w-[1400px] flex-row items-center justify-center overflow-hidden gap-4 md:gap-6 [perspective:800px]">
-                 <div
-                   className="flex flex-row items-center gap-4 w-full justify-center"
-                   style={{
-                     transform:
-                       'translateX(-120px) translateY(0px) translateZ(-50px) rotateX(15deg) rotateY(-10deg) rotateZ(5deg)',
-                     transformStyle: 'preserve-3d',
-                   }}
-                 >
-                   {/* Vertical Marquee (downwards) */}
-                   <Marquee vertical pauseOnHover repeat={4} className="[--duration:50s] hidden md:flex">
-                     {testimonials.map((review, i) => (
-                       <TestimonialCard key={`col1-${i}`} {...review} />
-                     ))}
-                   </Marquee>
-                   {/* Vertical Marquee (upwards) */}
-                   <Marquee vertical pauseOnHover reverse repeat={4} className="[--duration:40s]">
-                     {testimonials.map((review, i) => (
-                       <TestimonialCard key={`col2-${i}`} {...review} />
-                     ))}
-                   </Marquee>
-                   {/* Vertical Marquee (downwards) */}
-                   <Marquee vertical pauseOnHover repeat={4} className="[--duration:45s]">
-                     {testimonials.map((review, i) => (
-                       <TestimonialCard key={`col3-${i}`} {...review} />
-                     ))}
-                   </Marquee>
-                    {/* Vertical Marquee (upwards) */}
-                   <Marquee vertical pauseOnHover reverse repeat={4} className="[--duration:55s] hidden lg:flex">
-                     {testimonials.map((review, i) => (
-                       <TestimonialCard key={`col4-${i}`} {...review} />
-                     ))}
-                   </Marquee>
-                 </div>
+                <div className="flex justify-center w-full px-4 md:px-0">
+                   <div className="relative flex h-[500px] w-full max-w-[1400px] flex-row items-center justify-center overflow-hidden gap-4 md:gap-6 [perspective:800px]">
+                     <div
+                       className="flex flex-row items-center gap-4 w-full justify-center"
+                       style={{
+                         transform:
+                           'translateX(-120px) translateY(0px) translateZ(-50px) rotateX(15deg) rotateY(-10deg) rotateZ(5deg)',
+                         transformStyle: 'preserve-3d',
+                       }}
+                     >
+                       {/* Vertical Marquee (downwards) */}
+                       <Marquee vertical pauseOnHover repeat={4} className="[--duration:50s] hidden md:flex">
+                         {testimonials.map((review, i) => (
+                           <TestimonialCard key={`col1-${i}`} {...review} />
+                         ))}
+                       </Marquee>
+                       {/* Vertical Marquee (upwards) */}
+                       <Marquee vertical pauseOnHover reverse repeat={4} className="[--duration:40s]">
+                         {testimonials.map((review, i) => (
+                           <TestimonialCard key={`col2-${i}`} {...review} />
+                         ))}
+                       </Marquee>
+                       {/* Vertical Marquee (downwards) */}
+                       <Marquee vertical pauseOnHover repeat={4} className="[--duration:45s]">
+                         {testimonials.map((review, i) => (
+                           <TestimonialCard key={`col3-${i}`} {...review} />
+                         ))}
+                       </Marquee>
+                        {/* Vertical Marquee (upwards) */}
+                       <Marquee vertical pauseOnHover reverse repeat={4} className="[--duration:55s] hidden lg:flex">
+                         {testimonials.map((review, i) => (
+                           <TestimonialCard key={`col4-${i}`} {...review} />
+                         ))}
+                       </Marquee>
+                     </div>
 
-                 {/* Gradient overlays for vertical marquee */}
-                 <div className="pointer-events-none absolute inset-x-0 top-0 h-1/3 bg-gradient-to-b from-background via-background/80 to-transparent z-10"></div>
-                 <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-background via-background/80 to-transparent z-10"></div>
-               </div>
-            </div>
-        </section>
+                     {/* Gradient overlays for vertical marquee */}
+                     <div className="pointer-events-none absolute inset-x-0 top-0 h-1/3 bg-gradient-to-b from-[#010101] via-[#010101]/80 to-transparent z-10"></div>
+                     <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-[#010101] via-[#010101]/80 to-transparent z-10"></div>
+                   </div>
+                </div>
+            </section>
+        </ClickSpark>
     );
 }

@@ -1,39 +1,61 @@
 "use client";
 
-import { AnimatedCarousel } from "@/components/ui/logo-carousel";
+import { LogoLoop } from "@/components/ui/LogoLoop";
+import { Instrument_Serif } from "next/font/google";
+import { 
+  SiReact, 
+  SiNextdotjs, 
+  SiTypescript, 
+  SiTailwindcss, 
+  SiStripe, 
+  SiNotion, 
+  SiGithub, 
+  SiFigma, 
+  SiFramer, 
+  SiStorybook 
+} from "react-icons/si";
 
-const partnerLogos = [
-  { src: "https://cdn.worldvectorlogo.com/logos/react-2.svg", alt: "React" },
-  { src: "https://cdn.worldvectorlogo.com/logos/next-js.svg", alt: "Next.js" },
-  { src: "https://cdn.worldvectorlogo.com/logos/vercel.svg", alt: "Vercel" },
-  { src: "https://cdn.worldvectorlogo.com/logos/typescript.svg", alt: "TypeScript" },
-  { src: "https://cdn.worldvectorlogo.com/logos/tailwindcss.svg", alt: "Tailwind CSS" },
-  { src: "https://cdn.worldvectorlogo.com/logos/stripe-4.svg", alt: "Stripe" },
-  { src: "https://cdn.worldvectorlogo.com/logos/notion-2.svg", alt: "Notion" },
-  { src: "https://cdn.worldvectorlogo.com/logos/github-icon-1.svg", alt: "GitHub" },
-  { src: "https://cdn.worldvectorlogo.com/logos/figma-icon-one-color.svg", alt: "Figma" },
-  { src: "https://cdn.worldvectorlogo.com/logos/framer-motion.svg", alt: "Framer Motion" },
-  { src: "https://cdn.worldvectorlogo.com/logos/storybook-1.svg", alt: "Storybook" },
-  { src: "https://cdn.worldvectorlogo.com/logos/sanity.svg", alt: "Sanity" },
+const instrument = Instrument_Serif({
+    subsets: ["latin"],
+    weight: ["400"],
+    variable: "--font-instrument",
+});
+
+const techLogos = [
+  { node: <SiReact className="text-[#61DAFB]" />, title: "React", href: "https://react.dev" },
+  { node: <SiNextdotjs className="text-white" />, title: "Next.js", href: "https://nextjs.org" },
+  { node: <SiTypescript className="text-[#3178C6]" />, title: "TypeScript", href: "https://www.typescriptlang.org" },
+  { node: <SiTailwindcss className="text-[#06B6D4]" />, title: "Tailwind CSS", href: "https://tailwindcss.com" },
+  { node: <SiStripe className="text-[#008CDD]" />, title: "Stripe", href: "https://stripe.com" },
+  { node: <SiNotion className="text-white" />, title: "Notion", href: "https://notion.so" },
+  { node: <SiGithub className="text-white" />, title: "GitHub", href: "https://github.com" },
+  { node: <SiFigma className="text-[#F24E1E]" />, title: "Figma", href: "https://figma.com" },
+  { node: <SiFramer className="text-[#0055FF]" />, title: "Framer", href: "https://framer.com" },
+  { node: <SiStorybook className="text-[#FF4785]" />, title: "Storybook", href: "https://storybook.js.org" },
 ];
+
+import ScrollRevealText from "@/components/ui/ScrollRevealText";
 
 export function Partners() {
   return (
-    <section className="bg-background border-y border-border/40">
-      <AnimatedCarousel 
-        title="Trusted by Innovative Teams"
-        logos={partnerLogos.map(logo => logo.src)}
-        autoPlay={true}
-        autoPlayInterval={3000}
-        itemsPerViewMobile={3}
-        itemsPerViewDesktop={6}
-        logoContainerWidth="w-40"
-        logoContainerHeight="h-20"
-        logoImageWidth="w-auto"
-        logoImageHeight="h-10"
-        padding="py-16"
-        spacing="gap-12"
-      />
+    <section className="bg-[#010101] py-16 overflow-hidden flex flex-col items-center">
+      <div className="mx-auto flex max-w-5xl flex-col items-center gap-2 text-center mb-10">
+          <ScrollRevealText className={`${instrument.className} text-3xl md:text-4xl font-normal text-white leading-[0.95] tracking-[-1px]`}>
+            Trusted by Innovative Teams
+          </ScrollRevealText>
+      </div>
+      <div style={{ height: "40px", width: "100%", position: "relative" }}>
+        <LogoLoop
+          logos={techLogos}
+          speed={120}
+          direction="left"
+          logoHeight={32}
+          gap={60}
+          fadeOut
+          fadeOutColor="#010101"
+          scaleOnHover
+        />
+      </div>
     </section>
   );
 }

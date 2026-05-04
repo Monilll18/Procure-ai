@@ -18,40 +18,57 @@ const inter = Inter({
 export function Hero() {
     return (
         <section className={`relative min-h-screen w-full flex flex-col items-center justify-center overflow-hidden ${inter.className}`}>
-            <style jsx>{`
-                .liquid-glass {
-                    background: rgba(255, 255, 255, 0.01);
-                    background-blend-mode: luminosity;
-                    backdrop-filter: blur(4px);
-                    -webkit-backdrop-filter: blur(4px);
-                    border: none;
-                    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
-                    position: relative;
-                    overflow: hidden;
-                }
-                .liquid-glass::before {
-                    content: '';
-                    position: absolute;
-                    inset: 0;
-                    border-radius: inherit;
-                    padding: 1.4px;
-                    background: linear-gradient(180deg,
-                        rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.15) 20%,
-                        rgba(255,255,255,0) 40%, rgba(255,255,255,0) 60%,
-                        rgba(255,255,255,0.15) 80%, rgba(255,255,255,0.45) 100%);
-                    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-                    -webkit-mask-composite: xor;
-                    mask-composite: exclude;
-                    pointer-events: none;
-                }
-                @keyframes fade-rise {
+            <style dangerouslySetInnerHTML={{ __html: `
+                @keyframes hero-fade-rise {
                     from { opacity: 0; transform: translateY(24px); }
                     to { opacity: 1; transform: translateY(0); }
                 }
-                .animate-fade-rise { animation: fade-rise 0.8s ease-out both; }
-                .animate-fade-rise-delay { animation: fade-rise 0.8s ease-out 0.2s both; }
-                .animate-fade-rise-delay-2 { animation: fade-rise 0.8s ease-out 0.4s both; }
-            `}</style>
+                .hero-animate-fade-rise { animation: hero-fade-rise 0.8s ease-out both; }
+                .hero-animate-fade-rise-delay { animation: hero-fade-rise 0.8s ease-out 0.2s both; }
+                .hero-animate-fade-rise-delay-2 { animation: hero-fade-rise 0.8s ease-out 0.4s both; }
+
+                .hero-luma-button {
+                    position: relative;
+                    background: transparent;
+                    border-radius: 9999px;
+                    z-index: 1;
+                    overflow: hidden;
+                    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15) inset;
+                    transition: all 0.3s ease;
+                }
+                .hero-luma-button::before {
+                    content: '';
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    width: 300%;
+                    height: 300%;
+                    background: conic-gradient(from 0deg, transparent 55%, rgba(138, 43, 226, 1) 65%, rgba(0, 191, 255, 1) 78%, transparent 88%);
+                    transform: translate(-50%, -50%);
+                    animation: hero-spin 3s linear infinite;
+                    z-index: -2;
+                }
+                .hero-luma-button::after {
+                    content: '';
+                    position: absolute;
+                    inset: 1.5px;
+                    background: rgba(5, 5, 5, 0.92);
+                    border-radius: 9999px;
+                    z-index: -1;
+                    backdrop-filter: blur(10px);
+                    transition: background 0.3s ease;
+                }
+                @keyframes hero-spin {
+                    100% { transform: translate(-50%, -50%) rotate(360deg); }
+                }
+                .hero-luma-button:hover::after {
+                    background: rgba(15, 15, 15, 0.85);
+                }
+                .hero-luma-button:hover {
+                    box-shadow: 0 0 30px rgba(0, 191, 255, 0.35), 0 0 60px rgba(138, 43, 226, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.25) inset;
+                    transform: scale(1.04);
+                }
+            ` }} />
 
             {/* Background Video */}
             <div className="absolute inset-0 z-0">
@@ -75,20 +92,20 @@ export function Hero() {
             <div className="relative z-10 flex flex-col items-center text-center px-6 pt-32 pb-40 w-full max-w-7xl mx-auto">
                 {/* Main Headline */}
                 <h1
-                    className={`${instrument.className} text-5xl sm:text-7xl md:text-8xl leading-[0.95] tracking-[-2.46px] max-w-4xl font-normal text-foreground animate-fade-rise`}
+                    className={`${instrument.className} text-5xl sm:text-7xl md:text-8xl leading-[0.95] tracking-[-2.46px] max-w-4xl font-normal text-white hero-animate-fade-rise`}
                 >
-                    Where <em className="not-italic text-muted-foreground">strategy</em> rises <em className="not-italic text-muted-foreground">through the data.</em>
+                    Where strategy rises through the data.
                 </h1>
 
                 {/* Subtext */}
-                <p className="text-muted-foreground text-base sm:text-lg max-w-2xl mt-8 leading-relaxed animate-fade-rise-delay">
+                <p className="text-muted-foreground text-base sm:text-lg max-w-2xl mt-8 leading-relaxed hero-animate-fade-rise-delay">
                     We're designing tools for procurement leaders, bold negotiators, and quiet strategists. Amid the chaos, we build digital spaces for sharp focus and inspired sourcing.
                 </p>
 
                 {/* Custom CTA Button */}
                 <Link 
                     href="/sign-in" 
-                    className="liquid-glass rounded-full px-14 py-5 text-base text-foreground mt-12 transition-transform duration-300 hover:scale-[1.03] cursor-pointer animate-fade-rise-delay-2 border border-white/20 shadow-[0_0_30px_rgba(255,255,255,0.06)]"
+                    className="hero-luma-button rounded-full px-14 py-5 text-base font-medium text-white mt-12 cursor-pointer hero-animate-fade-rise-delay-2 flex items-center justify-center gap-2"
                 >
                     Begin Sourcing
                 </Link>

@@ -32,7 +32,7 @@ const faqs = [
 
 export function FAQ() {
   return (
-    <section id="faq" className="w-full bg-[#010101] text-white flex flex-col items-center justify-center border-t border-white/10 py-24 z-10 relative">
+    <section id="faq" className="w-full bg-[#010101] text-white flex flex-col items-center justify-center py-24 min-h-[80vh] scroll-mt-20 z-10 relative">
       <div className="w-full max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-[3fr_2fr] gap-16 items-start">
         
         {/* Left: The Component We Built (FAQ List) */}

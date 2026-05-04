@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Eye, EyeOff, Mail, Sparkles, Hexagon } from "lucide-react";
+import { Eye, EyeOff, Mail, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SignIn, SignUp } from "@clerk/nextjs";
 import { dark } from "@clerk/themes";
@@ -267,21 +267,19 @@ export function LoginPage({ mode = "sign-in" }: { mode?: "sign-in" | "sign-up" }
         dividerText: "text-muted-foreground",
         formFieldLabel: "text-foreground",
         formFieldInput: "bg-background border-border/60 text-foreground focus:border-primary",
+        formButtonPrimary: "bg-white hover:bg-zinc-200 text-zinc-900 border-none shadow-sm",
         footerActionText: "text-muted-foreground",
-        footerActionLink: "text-primary hover:text-primary/80 font-medium",
+        footerActionLink: "text-white/70 hover:text-white font-medium",
     }
   };
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2 bg-background">
       {/* Left Content Section */}
-      <div className="relative hidden lg:flex flex-col justify-between bg-gradient-to-br from-primary/90 via-primary to-primary/80 p-12 text-primary-foreground overflow-hidden">
+      <div className="relative hidden lg:flex flex-col justify-between bg-gradient-to-br from-[#0a0a0a] via-[#111111] to-[#0d0d0d] p-12 text-white overflow-hidden">
         <div className="relative z-20">
           <Link href="/" className="inline-flex items-center gap-3 text-xl font-bold tracking-tight hover:opacity-80 transition-opacity">
-            <div className="size-10 rounded-lg bg-primary-foreground/10 backdrop-blur-sm flex items-center justify-center border border-primary-foreground/20">
-              <Hexagon className="size-6" />
-            </div>
-            <span className={`${instrument.className} text-3xl font-normal leading-none tracking-tight mt-1`}>Procure AI</span>
+            <span className={`${instrument.className} text-3xl font-normal leading-none tracking-tight mt-1 text-white`}>Procure AI</span>
           </Link>
         </div>
 
@@ -296,7 +294,7 @@ export function LoginPage({ mode = "sign-in" }: { mode?: "sign-in" | "sign-up" }
                 left: '70px',
                 width: '180px',
                 height: isTyping ? '440px' : '400px',
-                backgroundColor: '#6C3FF5',
+                backgroundColor: '#1A8A7A',
                 borderRadius: '10px 10px 0 0',
                 zIndex: 1,
                 transform: isTyping
@@ -449,21 +447,21 @@ export function LoginPage({ mode = "sign-in" }: { mode?: "sign-in" | "sign-up" }
           </div>
         </div>
 
-        <div className="relative z-20 flex items-center gap-8 text-sm text-primary-foreground/60">
-          <a href="#" className="hover:text-primary-foreground transition-colors">
+        <div className="relative z-20 flex items-center gap-8 text-sm text-white/40">
+          <a href="#" className="hover:text-white transition-colors">
             Privacy Policy
           </a>
-          <a href="#" className="hover:text-primary-foreground transition-colors">
+          <a href="#" className="hover:text-white transition-colors">
             Terms of Service
           </a>
-          <a href="#" className="hover:text-primary-foreground transition-colors">
+          <a href="#" className="hover:text-white transition-colors">
             Contact
           </a>
         </div>
 
-        <div className="absolute inset-0 bg-grid-white/[0.05] bg-[size:20px_20px]" />
-        <div className="absolute top-1/4 right-1/4 size-64 bg-primary-foreground/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 left-1/4 size-96 bg-primary-foreground/5 rounded-full blur-3xl" />
+        <div className="absolute inset-0 bg-grid-white/[0.03] bg-[size:20px_20px]" />
+        <div className="absolute top-1/4 right-1/4 size-64 bg-white/[0.03] rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 left-1/4 size-96 bg-white/[0.02] rounded-full blur-3xl" />
       </div>
 
       {/* Right Login Section */}
@@ -474,9 +472,6 @@ export function LoginPage({ mode = "sign-in" }: { mode?: "sign-in" | "sign-up" }
       >
         <div className="w-full max-w-[420px] flex flex-col items-center">
           <Link href="/" className="lg:hidden flex items-center justify-center gap-3 text-2xl font-bold mb-12 text-foreground hover:opacity-80 transition-opacity">
-            <div className="size-10 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/20">
-              <Hexagon className="size-6 text-primary" />
-            </div>
             <span className={`${instrument.className} text-3xl font-normal leading-none tracking-tight mt-1`}>Procure AI</span>
           </Link>
 
