@@ -2,8 +2,10 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Check, AlertCircle, Loader2, Download, CheckCircle2, Send } from "lucide-react";
+import { Check, AlertCircle, Loader2, Download, CheckCircle2, Send, type LucideProps } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+type IconType = React.FC<LucideProps>;
 
 /**
  * DoubleConfirmButton - Best for destructive or high-consequence actions (Reject, Delete)
@@ -13,9 +15,9 @@ interface DoubleConfirmButtonProps {
   idleText: string;
   confirmText?: string;
   successText?: string;
-  idleIcon?: React.ElementType;
-  confirmIcon?: React.ElementType;
-  successIcon?: React.ElementType;
+  idleIcon?: IconType;
+  confirmIcon?: IconType;
+  successIcon?: IconType;
   idleClasses?: string;
   confirmClasses?: string;
   successClasses?: string;
@@ -28,8 +30,8 @@ export function DoubleConfirmButton({
   confirmText = "Confirm?",
   successText = "Done",
   idleIcon: IdleIcon,
-  confirmIcon: ConfirmIcon = AlertCircle,
-  successIcon: SuccessIcon = Check,
+  confirmIcon: ConfirmIcon = AlertCircle as IconType,
+  successIcon: SuccessIcon = Check as IconType,
   idleClasses = "bg-zinc-900 text-zinc-400 hover:text-white hover:bg-zinc-800 border border-zinc-800",
   confirmClasses = "bg-red-500/10 text-red-500 border border-red-500/50",
   successClasses = "bg-red-500 text-white",
@@ -85,7 +87,7 @@ interface MorphingSubmitButtonProps {
   idleText: string;
   loadingText?: string;
   successText?: string;
-  idleIcon?: React.ElementType;
+  idleIcon?: IconType;
   onAction: () => Promise<void> | void;
   className?: string;
   variant?: "primary" | "success" | "purple";
@@ -95,7 +97,7 @@ export function MorphingSubmitButton({
   idleText,
   loadingText = "Processing...",
   successText = "Approved",
-  idleIcon: IdleIcon = Send,
+  idleIcon: IdleIcon = Send as IconType,
   onAction,
   className,
   variant = "primary",
