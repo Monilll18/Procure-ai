@@ -366,7 +366,7 @@ export default function DashboardPage() {
                                                 dataKey="spend" 
                                                 fill="hsl(var(--primary))" 
                                                 radius={[0, 4, 4, 0]} 
-                                                background={{ fill: 'hsl(var(--secondary))', radius: [0, 4, 4, 0] }}
+                                                background={{ fill: 'hsl(var(--secondary))', radius: [0, 4, 4, 0] } as any}
                                             />
                                         </BarChart>
                                     </ResponsiveContainer>
