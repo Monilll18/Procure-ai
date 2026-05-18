@@ -10,6 +10,7 @@ from app.database import get_db
 from app.models.purchase_order import PurchaseOrder, POLineItem, POStatus
 from app.models.product import Product
 from app.models.supplier import Supplier
+from app.services.cache import cache, TTL_ANALYTICS
 
 router = APIRouter()
 

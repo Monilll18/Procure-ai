@@ -276,10 +276,9 @@ export function ResetPasswordContent({ tokenFromUrl }: Props) {
                 </Button>
 
                 {resetUrl && (
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
+                  <div 
                     className="rounded-xl border border-zinc-800 bg-zinc-950 p-4 space-y-3 shadow-inner"
+                    style={{ animation: 'fadeUp 0.4s cubic-bezier(.22,.61,.36,1) forwards' }}
                   >
                     <p className="font-semibold text-zinc-50 text-sm flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full bg-green-500" />
@@ -293,7 +292,7 @@ export function ResetPasswordContent({ tokenFromUrl }: Props) {
                     >
                       <KeyRound className="mr-2 h-4 w-4" /> Reset Password Now
                     </Button>
-                  </motion.div>
+                  </div>
                 )}
               </form>
             ) : (
