@@ -23,6 +23,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { UserButton, useUser } from "@clerk/nextjs";
 import { useRBAC } from "@/lib/rbac";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const ROLE_LABELS: Record<string, string> = {
     admin: "Admin",
@@ -40,17 +46,42 @@ const ROLE_COLORS: Record<string, string> = {
     viewer: "bg-zinc-500/15 text-zinc-400 border border-zinc-500/30",
 };
 
-const navItems = [
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, perm: "view_dashboard" },
-    { href: "/products", label: "Products", icon: Package, perm: "view_products" },
-    { href: "/suppliers", label: "Suppliers", icon: Truck, perm: "view_suppliers" },
-    { href: "/inventory", label: "Inventory", icon: ClipboardList, perm: "view_inventory" },
-    { href: "/requisitions", label: "Requests", icon: FileText, perm: "view_requisitions" },
-    { href: "/approvals", label: "Approvals", icon: FileText, perm: "view_approvals" },
-    { href: "/purchase-orders", label: "Orders", icon: ShoppingCart, perm: "view_purchase_orders" },
-    { href: "/ai-insights", label: "AI Insights", icon: Brain, perm: "view_ai_insights" },
-    { href: "/analytics", label: "Analytics", icon: BarChart3, perm: "view_analytics" },
-    { href: "/settings", label: "Settings", icon: Settings, perm: "view_settings" },
+type NavGroup = {
+    group: string;
+    items: { href: string; label: string; description: string; icon: any; perm: string }[];
+};
+
+const navGroups: NavGroup[] = [
+    {
+        group: "Core",
+        items: [
+            { href: "/dashboard", label: "Dashboard", description: "System overview and key metrics", icon: LayoutDashboard, perm: "view_dashboard" },
+            { href: "/analytics", label: "Analytics", description: "Deep dive into procurement data", icon: BarChart3, perm: "view_analytics" },
+            { href: "/ai-insights", label: "AI Insights", description: "AI generated insights and alerts", icon: Brain, perm: "view_ai_insights" },
+        ]
+    },
+    {
+        group: "Source to Pay",
+        items: [
+            { href: "/requisitions", label: "Requests", description: "Manage internal purchase requests", icon: FileText, perm: "view_requisitions" },
+            { href: "/approvals", label: "Approvals", description: "Review and approve pending items", icon: FileText, perm: "view_approvals" },
+            { href: "/purchase-orders", label: "Orders", description: "Track and manage purchase orders", icon: ShoppingCart, perm: "view_purchase_orders" },
+        ]
+    },
+    {
+        group: "Supply Chain",
+        items: [
+            { href: "/products", label: "Products", description: "Manage product catalog and pricing", icon: Package, perm: "view_products" },
+            { href: "/suppliers", label: "Suppliers", description: "Manage vendor relationships", icon: Truck, perm: "view_suppliers" },
+            { href: "/inventory", label: "Inventory", description: "Monitor stock levels and locations", icon: ClipboardList, perm: "view_inventory" },
+        ]
+    },
+    {
+        group: "System",
+        items: [
+            { href: "/settings", label: "Settings", description: "Configure system preferences and users", icon: Settings, perm: "view_settings" },
+        ]
+    }
 ];
 
 export function Sidebar() {
@@ -59,30 +90,27 @@ export function Sidebar() {
     const { user } = useUser();
     const { role, can } = useRBAC();
 
-    // Filter nav items based on the user's permissions
-    const visibleItems = navItems.filter((item) => can(item.perm));
-
     return (
         <aside
             className={cn(
-                "flex flex-col border-r border-border bg-card text-card-foreground transition-all duration-300 relative z-40",
-                collapsed ? "w-20" : "w-64"
+                "flex flex-col border-r border-border bg-card text-foreground transition-all duration-300 relative z-40",
+                collapsed ? "w-[80px]" : "w-[280px]"
             )}
         >
             {/* Sidebar Header */}
-            <div className="flex h-16 items-center justify-between px-4 border-b border-border/50">
+            <div className="flex h-[64px] items-center justify-between px-4 border-b border-border">
                 {!collapsed && (
                     <div className="flex items-center gap-2">
-                        <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold shadow-lg shadow-primary/20">
-                            AI
+                        <div className="relative h-10 w-10 flex items-center justify-center overflow-hidden">
+                            <img src="/logo-icon.png" alt="ProcureAI Logo" className="object-contain w-full h-full scale-125" />
                         </div>
-                        <span className="font-bold text-lg tracking-tight">ProcureAI</span>
+                        <span className="font-[700] text-[18px] text-foreground tracking-[-0.02em]">ProcureAI</span>
                     </div>
                 )}
                 <Button
                     variant="ghost"
                     size="icon"
-                    className={cn("text-muted-foreground hover:bg-secondary", collapsed && "mx-auto")}
+                    className={cn("h-[34px] w-[34px] rounded-[8px] bg-secondary hover:bg-muted text-muted-foreground transition-[0.15s_ease]", collapsed && "mx-auto")}
                     onClick={() => setCollapsed(!collapsed)}
                 >
                     {collapsed ? <Menu className="h-5 w-5" /> : <ChevronLeft className="h-5 w-5" />}
@@ -90,54 +118,63 @@ export function Sidebar() {
             </div>
 
             {/* Navigation Links */}
-            <nav className="flex-1 space-y-1 p-3 overflow-y-auto py-6">
-                {visibleItems.map((item) => {
-                    const isActive = pathname.startsWith(item.href);
-                    return (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            className={cn(
-                                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 group relative overflow-hidden",
-                                isActive
-                                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                                    : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                                collapsed && "justify-center px-2"
-                            )}
-                        >
-                            <item.icon className={cn("h-5 w-5 shrink-0", isActive ? "text-primary-foreground" : "text-muted-foreground group-hover:text-primary")} />
-                            {!collapsed && <span>{item.label}</span>}
-                        </Link>
-                    );
-                })}
-            </nav>
+            <TooltipProvider delayDuration={0}>
+                <nav className="flex-1 p-3 overflow-y-auto pt-4 space-y-6">
+                    {navGroups.map((group) => {
+                        const visibleItems = group.items.filter((item) => can(item.perm));
+                        if (visibleItems.length === 0) return null;
+                        
+                        return (
+                            <div key={group.group} className="space-y-1">
+                                {!collapsed && (
+                                    <div className="px-2 pb-2">
+                                        <span className="text-[10px] uppercase text-muted-foreground tracking-[0.08em] font-[600]">{group.group}</span>
+                                    </div>
+                                )}
+                                {visibleItems.map((item) => {
+                                    const isActive = pathname.startsWith(item.href);
+                                    
+                                    const linkContent = (
+                                        <Link
+                                            key={item.href}
+                                            href={item.href}
+                                            className={cn(
+                                                "flex items-center gap-3 rounded-[6px] px-[12px] py-[9px] text-[13px] transition-[0.15s_ease] group",
+                                                isActive
+                                                    ? "bg-primary/10 text-primary font-[600]"
+                                                    : "text-muted-foreground font-[400] hover:bg-secondary hover:text-foreground",
+                                                collapsed && "justify-center px-2"
+                                            )}
+                                        >
+                                            <item.icon className={cn("h-[18px] w-[18px] shrink-0", isActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+                                            {!collapsed && <span>{item.label}</span>}
+                                        </Link>
+                                    );
 
-            {/* User Section — Clerk UserButton + Role Badge */}
-            <div className="p-4 border-t border-border/50 bg-secondary/10">
-                <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
-                    <UserButton
-                        afterSignOutUrl="/"
-                        appearance={{
-                            elements: {
-                                avatarBox: "h-10 w-10",
-                            },
-                        }}
-                    />
-                    {!collapsed && user && (
-                        <div className="flex flex-col flex-1 overflow-hidden">
-                            <span className="text-sm font-medium truncate">
-                                {user.fullName || user.firstName || "User"}
-                            </span>
-                            <span className={cn(
-                                "text-[10px] font-semibold px-1.5 py-0.5 rounded-md w-fit mt-0.5 uppercase tracking-wider",
-                                ROLE_COLORS[role] || ROLE_COLORS.viewer
-                            )}>
-                                {ROLE_LABELS[role] || "Viewer"}
-                            </span>
-                        </div>
-                    )}
-                </div>
-            </div>
+                                    if (collapsed) {
+                                        return (
+                                            <Tooltip key={item.href}>
+                                                <TooltipTrigger asChild>
+                                                    {linkContent}
+                                                </TooltipTrigger>
+                                                <TooltipContent side="right" sideOffset={16} className="bg-zinc-900 dark:bg-zinc-800 text-zinc-50 border-zinc-800 py-2.5 px-3 rounded-[12px] shadow-xl z-50">
+                                                    <div className="flex flex-col gap-0.5 max-w-[200px]">
+                                                        <span className="font-semibold text-[13px]">{item.label}</span>
+                                                        <span className="text-[11px] text-zinc-400 font-medium leading-[1.3]">{item.description}</span>
+                                                    </div>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        );
+                                    }
+
+                                    return linkContent;
+                                })}
+                            </div>
+                        );
+                    })}
+                </nav>
+            </TooltipProvider>
+
         </aside>
     );
 }

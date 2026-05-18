@@ -10,8 +10,13 @@ import { FooterReveal } from "@/components/landing/FooterReveal";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-background text-foreground selection:bg-primary/30 flex flex-col">
-      <div className="relative z-10 bg-[#010101] shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
+    <>
+      <style dangerouslySetInnerHTML={{ __html: `
+        body { background-color: #0a0a0a !important; color: #fafafa !important; }
+        html { background-color: #0a0a0a !important; }
+      ` }} />
+      <main className="dark min-h-screen bg-background text-foreground selection:bg-primary/30 flex flex-col">
+        <div className="relative z-10 bg-[#010101] shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
         <Navbar />
         <Hero />
         <Partners />
@@ -22,6 +27,7 @@ export default function Home() {
         <Prism />
       </div>
       <FooterReveal />
-    </main>
+      </main>
+    </>
   );
 }

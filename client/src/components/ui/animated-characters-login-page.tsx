@@ -256,25 +256,25 @@ export function LoginPage({ mode = "sign-in" }: { mode?: "sign-in" | "sign-up" }
   const orangePos = calculatePosition(orangeRef);
 
   const clerkAppearance = {
-    baseTheme: resolvedTheme === "dark" || !resolvedTheme ? dark : undefined,
+    baseTheme: dark,
     elements: {
         rootBox: "w-full flex justify-center",
-        card: "bg-[#0b0c10] border border-border/10 shadow-2xl w-full max-w-[400px]",
-        headerTitle: "text-foreground text-2xl font-bold",
-        headerSubtitle: "text-muted-foreground",
-        socialButtonsBlockButton: "border-border/60 hover:bg-accent text-foreground",
-        dividerLine: "bg-border/60",
-        dividerText: "text-muted-foreground",
-        formFieldLabel: "text-foreground",
-        formFieldInput: "bg-background border-border/60 text-foreground focus:border-primary",
+        card: "bg-[#0b0c10] border border-white/10 shadow-2xl w-full max-w-[400px]",
+        headerTitle: "text-white text-2xl font-bold",
+        headerSubtitle: "text-white/60",
+        socialButtonsBlockButton: "border-white/10 hover:bg-white/5 text-white",
+        dividerLine: "bg-white/10",
+        dividerText: "text-white/60",
+        formFieldLabel: "text-white",
+        formFieldInput: "bg-black/50 border-white/10 text-white focus:border-[#1A8A7A]",
         formButtonPrimary: "bg-white hover:bg-zinc-200 text-zinc-900 border-none shadow-sm",
-        footerActionText: "text-muted-foreground",
-        footerActionLink: "text-white/70 hover:text-white font-medium",
+        footerActionText: "text-white/60",
+        footerActionLink: "text-[#1A8A7A] hover:text-[#1A8A7A]/80 font-medium",
     }
   };
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 bg-background">
+    <div className="min-h-screen grid lg:grid-cols-2 bg-[#0a0a0a]">
       {/* Left Content Section */}
       <div className="relative hidden lg:flex flex-col justify-between bg-gradient-to-br from-[#0a0a0a] via-[#111111] to-[#0d0d0d] p-12 text-white overflow-hidden">
         <div className="relative z-20">
@@ -466,12 +466,12 @@ export function LoginPage({ mode = "sign-in" }: { mode?: "sign-in" | "sign-up" }
 
       {/* Right Login Section */}
       <div 
-        className="flex items-center justify-center p-8 bg-background relative z-10"
+        className="flex items-center justify-center p-8 bg-[#0a0a0a] relative z-10"
         onMouseEnter={() => setIsTyping(true)}
         onMouseLeave={() => setIsTyping(false)}
       >
         <div className="w-full max-w-[420px] flex flex-col items-center">
-          <Link href="/" className="lg:hidden flex items-center justify-center gap-3 text-2xl font-bold mb-12 text-foreground hover:opacity-80 transition-opacity">
+          <Link href="/" className="lg:hidden flex items-center justify-center gap-3 text-2xl font-bold mb-12 text-white hover:opacity-80 transition-opacity">
             <span className={`${instrument.className} text-3xl font-normal leading-none tracking-tight mt-1`}>Procure AI</span>
           </Link>
 

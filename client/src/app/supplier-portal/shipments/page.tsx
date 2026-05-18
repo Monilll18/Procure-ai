@@ -23,6 +23,8 @@ import {
     getShipments, createShipment, updateShipment, getSupplierPOs,
     type SupplierShipment, type SupplierPO,
 } from "@/lib/supplier-api";
+import { PageSkeleton } from "@/components/ui/skeletons";
+import { toast } from "sonner";
 
 const SHIPMENT_STATUS_COLORS: Record<string, string> = {
     preparing: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400",
@@ -124,7 +126,7 @@ export default function ShipmentsPage() {
             setShipNotes("");
             loadShipments();
         } catch (err: any) {
-            alert(`❌ ${err.message}`);
+            toast.error(`❌ ${err.message}`);
         } finally {
             setCreating(false);
         }
@@ -142,7 +144,7 @@ export default function ShipmentsPage() {
             setUpdateTarget(null);
             loadShipments();
         } catch (err: any) {
-            alert(`❌ ${err.message}`);
+            toast.error(`❌ ${err.message}`);
         } finally {
             setUpdating(false);
         }
@@ -183,9 +185,7 @@ export default function ShipmentsPage() {
 
             {/* Shipment List */}
             {loading ? (
-                <div className="flex items-center justify-center py-20">
-                    <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
-                </div>
+                <PageSkeleton rows={6} cols={4} />
             ) : shipments.length === 0 ? (
                 <Card>
                     <CardContent className="py-16 text-center text-muted-foreground">

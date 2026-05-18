@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
+import { useCachedFetch } from "@/hooks/useCachedFetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -37,6 +38,7 @@ import {
     getSupplierPriceComparison,
     getSupplierCoverage, type SupplierCoverageItem,
 } from "@/lib/api";
+import { PageSkeleton } from "@/components/ui/skeletons";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
     draft: { label: "Draft", color: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30", icon: FileText },
@@ -58,28 +60,45 @@ const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
 export default function RequisitionsPage() {
     const { role, can } = useRBAC();
     const { getToken } = useAuth();
-    const [prs, setPrs] = useState<PurchaseRequisition[]>([]);
-    const [loading, setLoading] = useState(true);
+
+    // Cached list fetches
+    const { data: prsRaw, loading, refresh: refreshPRs } = useCachedFetch<PurchaseRequisition[]>({
+        cacheKey: "/api/requisitions/",
+        fetcher: () => getRequisitions().catch(() => []),
+    });
+    const { data: productsRaw } = useCachedFetch<Product[]>({
+        cacheKey: "/api/products/",
+        fetcher: () => getProducts().catch(() => []),
+    });
+    const { data: suppliersRaw } = useCachedFetch<Supplier[]>({
+        cacheKey: "/api/suppliers/",
+        fetcher: () => getSuppliers().catch(() => []),
+    });
+    const { data: departmentsRaw } = useCachedFetch<DepartmentData[]>({
+        cacheKey: "/api/departments/",
+        fetcher: () => getDepartments().catch(() => []),
+    });
+
+    const prs: PurchaseRequisition[] = prsRaw ?? [];
+    const products: Product[] = productsRaw ?? [];
+    const suppliers: Supplier[] = suppliersRaw ?? [];
+    const departments: DepartmentData[] = departmentsRaw ?? [];
+
+    // Ephemeral UI state
     const [search, setSearch] = useState("");
     const [tab, setTab] = useState("all");
     const [showCreate, setShowCreate] = useState(false);
     const [creating, setCreating] = useState(false);
     const [selectedPR, setSelectedPR] = useState<PurchaseRequisition | null>(null);
-    const [products, setProducts] = useState<Product[]>([]);
-    const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-    const [departments, setDepartments] = useState<DepartmentData[]>([]);
     const [rejectReason, setRejectReason] = useState("");
     const [showReject, setShowReject] = useState(false);
     const [actionLoading, setActionLoading] = useState("");
     const [nlInput, setNlInput] = useState("");
     const [nlParsing, setNlParsing] = useState(false);
     const [showAIAssist, setShowAIAssist] = useState(false);
-    // Product search state for line items
     const [productSearchIdx, setProductSearchIdx] = useState<number | null>(null);
     const [productQuery, setProductQuery] = useState("");
-    // Cache for product prices { productId: lowestPrice }
     const priceCache = useRef<Record<string, number>>({});
-    // Supplier selection for PR→PO conversion
     const [showSupplierPicker, setShowSupplierPicker] = useState(false);
     const [convertingPR, setConvertingPR] = useState<PurchaseRequisition | null>(null);
     const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
@@ -100,27 +119,7 @@ export default function RequisitionsPage() {
         line_items: [{ item_name: "", quantity: 1, estimated_unit_price: 0, unit: "pcs", product_id: "" }] as any[],
     });
 
-    useEffect(() => {
-        loadData();
-    }, []);
-
-    const loadData = async () => {
-        setLoading(true);
-        try {
-            const [prData, prodData, suppData, deptData] = await Promise.all([
-                getRequisitions().catch(() => []),
-                getProducts().catch(() => []),
-                getSuppliers().catch(() => []),
-                getDepartments().catch(() => []),
-            ]);
-            setPrs(prData);
-            setProducts(prodData);
-            setSuppliers(suppData);
-            setDepartments(deptData);
-        } finally {
-            setLoading(false);
-        }
-    };
+    const loadData = async () => { refreshPRs(); };
 
     // Fetch lowest supplier price for a product and cache it
     const fetchProductPrice = async (productId: string): Promise<number> => {
@@ -267,12 +266,7 @@ export default function RequisitionsPage() {
     );
 
     if (loading) {
-        return (
-            <div className="flex items-center justify-center min-h-[60vh]">
-                <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                <span className="ml-4 text-muted-foreground text-lg">Loading requisitions...</span>
-            </div>
-        );
+        return <PageSkeleton rows={6} cols={6} />;
     }
 
     return (

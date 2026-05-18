@@ -230,7 +230,7 @@ export function Pricing() {
     }, []);
 
     return (
-        <section id="pricing" className="relative min-h-screen py-24 md:py-32 bg-[#010101] text-zinc-50 overflow-hidden isolate">
+        <section id="pricing" className="relative min-h-screen py-24 md:py-32 bg-[#010101] text-zinc-50 overflow-hidden isolate" style={{ contentVisibility: "auto", containIntrinsicSize: "auto 1000px" }}>
             <style>{`
                 .pricing-section[data-locked]{ color:#f6f7f8; color-scheme:dark }
                 .accent-lines{position:absolute;inset:0;pointer-events:none;opacity:.7}

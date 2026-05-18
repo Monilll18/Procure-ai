@@ -266,7 +266,7 @@ function MobileCard({ feature }: { feature: typeof featureCards[number] }) {
 
 export function Features() {
     return (
-        <section id="features" className="relative bg-[#010101] z-[1]">
+        <section id="features" className="relative bg-[#010101] z-[1]" style={{ contentVisibility: "auto", containIntrinsicSize: "auto 1200px" }}>
             {/* Header */}
             <div className="container mx-auto px-6 pt-24 pb-12 text-center max-w-3xl relative z-10">
                 <motion.div

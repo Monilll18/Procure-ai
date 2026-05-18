@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { AnimatedDownloadButton } from "@/components/ui/animated-buttons";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,6 +25,7 @@ import {
     getInvoices, createInvoice, submitInvoice, downloadInvoicePdf, getSupplierPOs,
     type SupplierInvoiceT, type SupplierPO,
 } from "@/lib/supplier-api";
+import { PageSkeleton } from "@/components/ui/skeletons";
 
 const INV_STATUS_COLORS: Record<string, string> = {
     draft: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400",
@@ -175,9 +177,7 @@ export default function InvoicesPage() {
 
             {/* Invoice List */}
             {loading ? (
-                <div className="flex items-center justify-center py-20">
-                    <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
-                </div>
+                <PageSkeleton rows={6} cols={5} />
             ) : invoices.length === 0 ? (
                 <Card>
                     <CardContent className="py-16 text-center text-muted-foreground">
@@ -231,10 +231,10 @@ export default function InvoicesPage() {
                                         <Button size="sm" variant="outline" onClick={() => setViewInvoice(inv)}>
                                             <Eye className="h-3.5 w-3.5 mr-1" /> View
                                         </Button>
-                                        <Button
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={async () => {
+                                        <AnimatedDownloadButton
+                                            className="h-9 w-24"
+                                            text="PDF"
+                                            onDownload={async () => {
                                                 try {
                                                     await downloadInvoicePdf(inv.id, `${inv.invoice_number}.pdf`);
                                                     toast.success("Invoice PDF downloaded");
@@ -242,9 +242,7 @@ export default function InvoicesPage() {
                                                     toast.error(err.message || "Failed to download PDF");
                                                 }
                                             }}
-                                        >
-                                            <Download className="h-3.5 w-3.5 mr-1" /> PDF
-                                        </Button>
+                                        />
                                         {inv.status === "draft" && (
                                             <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" onClick={() => handleSubmit(inv)}>
                                                 <Send className="h-3.5 w-3.5 mr-1" /> Submit
@@ -385,10 +383,10 @@ export default function InvoicesPage() {
                                         <div className="flex items-center justify-between">
                                             <div>
                                                 <p className="font-semibold text-sm">{po.po_number}</p>
-                                                <p className="text-xs text-muted-foreground">
+                                                <div className="text-xs text-muted-foreground">
                                                     {po.line_items.length} items • ${po.total_amount.toLocaleString()}
                                                     <Badge variant="outline" className="ml-2 text-xs capitalize border-0">{po.status.replace(/_/g, " ")}</Badge>
-                                                </p>
+                                                </div>
                                             </div>
                                             <ArrowRight className="h-4 w-4 text-muted-foreground" />
                                         </div>

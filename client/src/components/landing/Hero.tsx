@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRef, useEffect } from "react";
 import { Instrument_Serif, Inter } from "next/font/google";
 
 const instrument = Instrument_Serif({
@@ -16,8 +17,35 @@ const inter = Inter({
 });
 
 export function Hero() {
+    const sectionRef = useRef<HTMLElement>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+
+    // Pause video when Hero scrolls out of view to free GPU/CPU
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) return;
+
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                if (entry.isIntersecting) {
+                    video.play().catch(() => {});
+                } else {
+                    video.pause();
+                }
+            },
+            { threshold: 0.05 }
+        );
+
+        observer.observe(video);
+        return () => observer.disconnect();
+    }, []);
+
     return (
-        <section className={`relative min-h-screen w-full flex flex-col items-center justify-center overflow-hidden ${inter.className}`}>
+        <section
+            ref={sectionRef}
+            className={`relative min-h-screen w-full flex flex-col items-center justify-center overflow-hidden ${inter.className}`}
+            style={{ contain: "paint layout", willChange: "auto" }}
+        >
             <style dangerouslySetInnerHTML={{ __html: `
                 @keyframes hero-fade-rise {
                     from { opacity: 0; transform: translateY(24px); }
@@ -70,14 +98,17 @@ export function Hero() {
                 }
             ` }} />
 
-            {/* Background Video */}
-            <div className="absolute inset-0 z-0">
+            {/* Background Video — GPU-promoted layer */}
+            <div className="absolute inset-0 z-0" style={{ transform: "translateZ(0)" }}>
                 <video
+                    ref={videoRef}
                     autoPlay
                     loop
                     muted
                     playsInline
+                    preload="auto"
                     className="w-full h-full object-cover"
+                    style={{ transform: "translate3d(0,0,0)" }}
                 >
                     <source
                         src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260314_131748_f2ca2a28-fed7-44c8-b9a9-bd9acdd5ec31.mp4"
@@ -85,7 +116,7 @@ export function Hero() {
                     />
                 </video>
                 {/* Overlay Scrim for readability */}
-                <div className="absolute inset-0 bg-background/50 pointer-events-none" />
+                <div className="absolute inset-0 bg-[#010101]/50 pointer-events-none" />
             </div>
 
             {/* Content Area */}
@@ -99,7 +130,7 @@ export function Hero() {
 
                 {/* Subtext */}
                 <p className="text-muted-foreground text-base sm:text-lg max-w-2xl mt-8 leading-relaxed hero-animate-fade-rise-delay">
-                    We're designing tools for procurement leaders, bold negotiators, and quiet strategists. Amid the chaos, we build digital spaces for sharp focus and inspired sourcing.
+                    We&apos;re designing tools for procurement leaders, bold negotiators, and quiet strategists. Amid the chaos, we build digital spaces for sharp focus and inspired sourcing.
                 </p>
 
                 {/* Custom CTA Button */}

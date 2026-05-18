@@ -5,6 +5,102 @@
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// ─── In-Memory API Cache ────────────────────────────────────────────
+// Prevents redundant DB round-trips when switching sidebar tabs.
+// Each entry stores the data + an expiry timestamp.
+
+interface CacheEntry<T> {
+    data: T;
+    expiresAt: number;
+}
+
+class ApiCache {
+    private store = new Map<string, CacheEntry<any>>();
+    // Deduplication: store in-flight Promises so concurrent calls for the
+    // same key share one network request instead of making N DB queries.
+    private inflight = new Map<string, Promise<any>>();
+
+    get<T>(key: string): T | null {
+        const entry = this.store.get(key);
+        if (!entry) return null;
+        if (Date.now() > entry.expiresAt) {
+            this.store.delete(key);
+            return null;
+        }
+        return entry.data as T;
+    }
+
+    set<T>(key: string, data: T, ttlMs: number): void {
+        this.store.set(key, { data, expiresAt: Date.now() + ttlMs });
+    }
+
+    /** Manually invalidate a key or all keys matching a prefix. */
+    invalidate(prefix: string): void {
+        for (const key of this.store.keys()) {
+            if (key.startsWith(prefix)) this.store.delete(key);
+        }
+        // Also cancel any pending in-flight for invalidated keys
+        for (const key of this.inflight.keys()) {
+            if (key.startsWith(prefix)) this.inflight.delete(key);
+        }
+    }
+
+    /** Clear everything (e.g. on logout). */
+    clear(): void {
+        this.store.clear();
+        this.inflight.clear();
+    }
+
+    /**
+     * Deduplicated fetch: if a request for this key is already in-flight,
+     * return the same Promise instead of launching a second network call.
+     */
+    async dedupedFetch<T>(
+        key: string,
+        ttlMs: number,
+        fetcher: () => Promise<T>
+    ): Promise<T> {
+        // 1. Cache hit — return immediately (synchronous)
+        const cached = this.get<T>(key);
+        if (cached !== null) return cached;
+
+        // 2. Already in-flight — reuse the same Promise
+        if (this.inflight.has(key)) {
+            return this.inflight.get(key) as Promise<T>;
+        }
+
+        // 3. New request — launch it, store the Promise, cache the result
+        const promise = fetcher()
+            .then((data) => {
+                this.set(key, data, ttlMs);
+                return data;
+            })
+            .finally(() => {
+                this.inflight.delete(key);
+            });
+
+        this.inflight.set(key, promise);
+        return promise;
+    }
+}
+
+// Singleton — survives SPA navigations within the same browser tab.
+export const apiCache = new ApiCache();
+
+// Default TTL constants
+const TTL_SHORT  = 30  * 1000;  // 30s  — frequently changing (notifications)
+const TTL_MED    = 60  * 1000;  // 60s  — most list endpoints
+const TTL_LONG   = 120 * 1000;  // 2min — heavy aggregates (dashboard stats)
+
+// ─── Global Token Provider ─────────────────────────────────────────
+// Set by AuthTokenProvider component so apiFetch can auto-attach
+// Clerk tokens to ALL requests, including read-only endpoints.
+let _tokenProvider: (() => Promise<string | null>) | null = null;
+
+export function setTokenProvider(fn: () => Promise<string | null>) {
+    _tokenProvider = fn;
+}
+
 // ─── Generic Fetch Wrapper ──────────────────────────────────────────
 
 async function apiFetch<T>(
@@ -12,13 +108,16 @@ async function apiFetch<T>(
     options: RequestInit = {},
     token?: string | null
 ): Promise<T> {
+    // Auto-resolve token if not explicitly provided
+    const resolvedToken = token ?? (await _tokenProvider?.()) ?? null;
+
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
         ...(options.headers as Record<string, string>),
     };
 
-    if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
+    if (resolvedToken) {
+        headers["Authorization"] = `Bearer ${resolvedToken}`;
     }
 
     const res = await fetch(`${API_BASE}${endpoint}`, {
@@ -35,6 +134,26 @@ async function apiFetch<T>(
     if (res.status === 204) return null as T;
     return res.json();
 }
+
+/**
+ * Cached version of apiFetch for GET/read-only endpoints.
+ * - Cache HIT  → returns instantly, zero network call
+ * - In-flight  → reuses the existing Promise (deduplication)
+ * - Cache MISS → fetches, caches, returns
+ */
+async function cachedFetch<T>(
+    endpoint: string,
+    ttlMs: number = TTL_MED,
+    options: RequestInit = {},
+    token?: string | null
+): Promise<T> {
+    return apiCache.dedupedFetch<T>(
+        endpoint,
+        ttlMs,
+        () => apiFetch<T>(endpoint, options, token)
+    );
+}
+
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -104,8 +223,8 @@ export interface PurchaseOrder {
 
 // Products
 export const getProducts = (category?: string) => {
-    const params = category ? `?category=${category}` : "";
-    return apiFetch<Product[]>(`/api/products/${params}`);
+    const endpoint = `/api/products/${category ? `?category=${category}` : ""}`;
+    return cachedFetch<Product[]>(endpoint, TTL_MED);
 };
 
 // Supplier Catalog — products a specific supplier sells
@@ -125,19 +244,30 @@ export interface SupplierCatalogItem {
 export const getSupplierCatalog = (supplierId: string) =>
     apiFetch<SupplierCatalogItem[]>(`/api/purchase-orders/supplier-catalog/${supplierId}`);
 
-export const createProduct = (data: Partial<Product>, token: string) =>
-    apiFetch<Product>("/api/products/", { method: "POST", body: JSON.stringify(data) }, token);
+export const createProduct = async (data: Partial<Product>, token: string) => {
+    const result = await apiFetch<Product>("/api/products/", { method: "POST", body: JSON.stringify(data) }, token);
+    apiCache.invalidate("/api/products/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
-export const updateProduct = (id: string, data: Partial<Product>, token: string) =>
-    apiFetch<Product>(`/api/products/${id}`, { method: "PATCH", body: JSON.stringify(data) }, token);
+export const updateProduct = async (id: string, data: Partial<Product>, token: string) => {
+    const result = await apiFetch<Product>(`/api/products/${id}`, { method: "PATCH", body: JSON.stringify(data) }, token);
+    apiCache.invalidate("/api/products/");
+    return result;
+};
 
-export const deleteProduct = (id: string, token: string) =>
-    apiFetch<null>(`/api/products/${id}`, { method: "DELETE" }, token);
+export const deleteProduct = async (id: string, token: string) => {
+    const result = await apiFetch<null>(`/api/products/${id}`, { method: "DELETE" }, token);
+    apiCache.invalidate("/api/products/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
 // Suppliers
 export const getSuppliers = (status?: string) => {
-    const params = status ? `?status=${status}` : "";
-    return apiFetch<Supplier[]>(`/api/suppliers/${params}`);
+    const endpoint = `/api/suppliers/${status ? `?status=${status}` : ""}`;
+    return cachedFetch<Supplier[]>(endpoint, TTL_MED);
 };
 
 export interface PortalCredentials {
@@ -147,41 +277,61 @@ export interface PortalCredentials {
     email_sent: boolean;
 }
 
-export const createSupplier = (data: Partial<Supplier> & { send_portal_invite?: boolean }, token: string) =>
-    apiFetch<Supplier & { portal_credentials?: PortalCredentials }>("/api/suppliers/", { method: "POST", body: JSON.stringify(data) }, token);
+export const createSupplier = async (data: Partial<Supplier> & { send_portal_invite?: boolean }, token: string) => {
+    const result = await apiFetch<Supplier & { portal_credentials?: PortalCredentials }>("/api/suppliers/", { method: "POST", body: JSON.stringify(data) }, token);
+    apiCache.invalidate("/api/suppliers/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
-export const deleteSupplier = (id: string, token: string) =>
-    apiFetch<null>(`/api/suppliers/${id}`, { method: "DELETE" }, token);
+export const deleteSupplier = async (id: string, token: string) => {
+    const result = await apiFetch<null>(`/api/suppliers/${id}`, { method: "DELETE" }, token);
+    apiCache.invalidate("/api/suppliers/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
 export const resendSupplierInvite = (supplierId: string, token: string) =>
     apiFetch<{ message: string; portal_credentials?: PortalCredentials; action?: string; reset_url?: string; token?: string; email_sent?: boolean }>(`/api/suppliers/${supplierId}/invite`, { method: "POST" }, token);
 
 // Inventory
-export const getInventory = () => apiFetch<InventoryItem[]>("/api/inventory/");
-export const getLowStockAlerts = () => apiFetch<InventoryItem[]>("/api/inventory/alerts");
+export const getInventory = () => cachedFetch<InventoryItem[]>("/api/inventory/", TTL_MED);
+export const getLowStockAlerts = () => cachedFetch<InventoryItem[]>("/api/inventory/alerts", TTL_MED);
 export const getStockMovements = (productId?: string) =>
-    apiFetch<any[]>(`/api/inventory/movements${productId ? `?product_id=${productId}` : ""}`);
-export const adjustStock = (data: {
+    cachedFetch<any[]>(`/api/inventory/movements${productId ? `?product_id=${productId}` : ""}`, TTL_SHORT);
+export const adjustStock = async (data: {
     product_id: string;
     quantity: number;
     type?: string;
     notes?: string;
-}, token: string) =>
-    apiFetch<any>("/api/inventory/adjust", { method: "POST", body: JSON.stringify(data) }, token);
+}, token: string) => {
+    const result = await apiFetch<any>("/api/inventory/adjust", { method: "POST", body: JSON.stringify(data) }, token);
+    apiCache.invalidate("/api/inventory/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
 // Purchase Orders
 export const getPurchaseOrders = (status?: string) => {
-    const params = status ? `?status=${status}` : "";
-    return apiFetch<PurchaseOrder[]>(`/api/purchase-orders/${params}`);
+    const endpoint = `/api/purchase-orders/${status ? `?status=${status}` : ""}`;
+    return cachedFetch<PurchaseOrder[]>(endpoint, TTL_MED);
 };
 
-export const createPurchaseOrder = (data: any, token: string) =>
-    apiFetch<PurchaseOrder>("/api/purchase-orders/", { method: "POST", body: JSON.stringify(data) }, token);
+export const createPurchaseOrder = async (data: any, token: string) => {
+    const result = await apiFetch<PurchaseOrder>("/api/purchase-orders/", { method: "POST", body: JSON.stringify(data) }, token);
+    apiCache.invalidate("/api/purchase-orders/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
-export const submitPO = (poId: string, token: string) =>
-    apiFetch<PurchaseOrder>(`/api/purchase-orders/${poId}/submit`, { method: "POST" }, token);
+export const submitPO = async (poId: string, token: string) => {
+    const result = await apiFetch<PurchaseOrder>(`/api/purchase-orders/${poId}/submit`, { method: "POST" }, token);
+    apiCache.invalidate("/api/purchase-orders/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
-export const receiveGoods = (poId: string, data: {
+export const receiveGoods = async (poId: string, data: {
     items: Array<{
         line_item_id: string;
         quantity_received: number;
@@ -189,24 +339,40 @@ export const receiveGoods = (poId: string, data: {
         storage_location?: string;
     }>;
     notes?: string;
-}, token: string) =>
-    apiFetch<any>(`/api/purchase-orders/${poId}/receive`, { method: "POST", body: JSON.stringify(data) }, token);
+}, token: string) => {
+    const result = await apiFetch<any>(`/api/purchase-orders/${poId}/receive`, { method: "POST", body: JSON.stringify(data) }, token);
+    apiCache.invalidate("/api/purchase-orders/");
+    apiCache.invalidate("/api/inventory/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
 export const downloadPoPdf = (poId: string) => {
     window.open(`${API_BASE}/api/purchase-orders/${poId}/pdf`, "_blank");
 };
 
-export const sendPOToSupplier = (poId: string, token: string) =>
-    apiFetch<{ message: string; sent_to: string; sent_at: string; po_status: string }>(
+export const sendPOToSupplier = async (poId: string, token: string) => {
+    const result = await apiFetch<{ message: string; sent_to: string; sent_at: string; po_status: string }>(
         `/api/purchase-orders/${poId}/send`, { method: "POST" }, token
     );
+    apiCache.invalidate("/api/purchase-orders/");
+    return result;
+};
 
 // Approvals
-export const approvePO = (poId: string, token: string) =>
-    apiFetch<any>(`/api/approvals/${poId}/approve`, { method: "POST" }, token);
+export const approvePO = async (poId: string, token: string) => {
+    const result = await apiFetch<any>(`/api/approvals/${poId}/approve`, { method: "POST" }, token);
+    apiCache.invalidate("/api/purchase-orders/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
-export const rejectPO = (poId: string, token: string) =>
-    apiFetch<any>(`/api/approvals/${poId}/reject`, { method: "POST" }, token);
+export const rejectPO = async (poId: string, token: string) => {
+    const result = await apiFetch<any>(`/api/approvals/${poId}/reject`, { method: "POST" }, token);
+    apiCache.invalidate("/api/purchase-orders/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
 // Dashboard Stats
 export interface DashboardStats {
@@ -221,18 +387,25 @@ export interface DashboardStats {
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
-    const [products, suppliers, orders, inventory, alerts] = await Promise.all([
+    const cacheKey = "/api/__dashboard_stats";
+    const cached = apiCache.get<DashboardStats>(cacheKey);
+    if (cached) return cached;
+
+    const [products, suppliers, orders, inventory, alerts, requisitions] = await Promise.all([
         getProducts(),
         getSuppliers(),
         getPurchaseOrders(),
         getInventory(),
         getLowStockAlerts(),
+        getRequisitions().catch(() => []),
     ]);
 
     const totalSpend = orders.reduce((sum, po) => sum + po.total_amount, 0);
-    const pendingApprovals = orders.filter((po) => po.status === "pending_approval").length;
+    const pendingPOs = orders.filter((po) => po.status === "pending_approval").length;
+    const pendingPRs = requisitions.filter((pr) => pr.status === "submitted" || pr.status === "under_review").length;
+    const pendingApprovals = pendingPOs + pendingPRs;
 
-    return {
+    const result: DashboardStats = {
         totalProducts: products.length,
         totalSuppliers: suppliers.length,
         totalPOs: orders.length,
@@ -242,6 +415,9 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         recentOrders: orders.slice(0, 5),
         inventoryAlerts: alerts.slice(0, 5),
     };
+
+    apiCache.set(cacheKey, result, TTL_LONG);
+    return result;
 }
 
 // ─── Analytics ───────────────────────────────────────────────────────
@@ -272,16 +448,16 @@ export interface AnalyticsSummary {
 }
 
 export const getSpendByCategory = () =>
-    apiFetch<CategorySpend[]>("/api/analytics/spend-by-category");
+    cachedFetch<CategorySpend[]>("/api/analytics/spend-by-category", TTL_LONG);
 
 export const getSupplierPerformance = () =>
-    apiFetch<SupplierPerformance[]>("/api/analytics/supplier-performance");
+    cachedFetch<SupplierPerformance[]>("/api/analytics/supplier-performance", TTL_LONG);
 
 export const getMonthlySpend = () =>
-    apiFetch<MonthlySpend[]>("/api/analytics/monthly-spend");
+    cachedFetch<MonthlySpend[]>("/api/analytics/monthly-spend", TTL_LONG);
 
 export const getAnalyticsSummary = () =>
-    apiFetch<AnalyticsSummary[]>("/api/analytics/summary");
+    cachedFetch<AnalyticsSummary[]>("/api/analytics/summary", TTL_LONG);
 
 // ─── AI Insights ─────────────────────────────────────────────────────
 
@@ -302,15 +478,15 @@ export interface ForecastPoint {
 }
 
 export const getInsights = () =>
-    apiFetch<Insight[]>("/api/insights/");
+    cachedFetch<Insight[]>("/api/insights/", TTL_LONG);
 
 export const getForecast = () =>
-    apiFetch<ForecastPoint[]>("/api/insights/forecast");
+    cachedFetch<ForecastPoint[]>("/api/insights/forecast", TTL_LONG);
 
 // ─── Pending Approvals ───────────────────────────────────────────────
 
 export const getPendingApprovals = () =>
-    apiFetch<PurchaseOrder[]>("/api/purchase-orders/?status=pending_approval");
+    cachedFetch<PurchaseOrder[]>("/api/purchase-orders/?status=pending_approval", TTL_SHORT);
 
 // ─── Notifications ───────────────────────────────────────────────────
 
@@ -326,10 +502,10 @@ export interface Notification {
 }
 
 export const getNotifications = () =>
-    apiFetch<Notification[]>("/api/notifications/");
+    cachedFetch<Notification[]>("/api/notifications/", TTL_SHORT);
 
 export const getUnreadNotificationCount = () =>
-    apiFetch<{ count: number }>("/api/notifications/unread-count");
+    cachedFetch<{ count: number }>("/api/notifications/unread-count", TTL_SHORT);
 
 export const markNotificationRead = (id: string) =>
     apiFetch<null>(`/api/notifications/${id}/read`, { method: "PATCH" });
@@ -349,7 +525,7 @@ export interface BudgetVsActual {
 }
 
 export const getBudgetVsActual = () =>
-    apiFetch<BudgetVsActual[]>("/api/budgets/vs-actual");
+    cachedFetch<BudgetVsActual[]>("/api/budgets/vs-actual", TTL_LONG);
 
 // ─── Supplier Price Comparison ───────────────────────────────────────
 
@@ -426,7 +602,7 @@ export interface TeamMember {
 }
 
 export const getTeamMembers = () =>
-    apiFetch<TeamMember[]>("/api/users/");
+    cachedFetch<TeamMember[]>("/api/users/", TTL_MED);
 
 export const getMyProfile = (token: string) =>
     apiFetch<TeamMember>("/api/users/me", {}, token);
@@ -456,7 +632,7 @@ export interface SystemSettings {
 }
 
 export const getSystemSettings = () =>
-    apiFetch<SystemSettings>("/api/settings/");
+    cachedFetch<SystemSettings>("/api/settings/", TTL_LONG);
 
 export const updateSystemSettings = (data: Partial<SystemSettings>, token: string) =>
     apiFetch<SystemSettings>("/api/settings/", { method: "PUT", body: JSON.stringify(data) }, token);
@@ -488,7 +664,7 @@ export interface IndustryOption {
 }
 
 export const getCompanyConfig = () =>
-    apiFetch<CompanyConfig>("/api/company/");
+    cachedFetch<CompanyConfig>("/api/company/", TTL_LONG);
 
 export const updateCompanyConfig = (data: Partial<CompanyConfig>) =>
     apiFetch<CompanyConfig>("/api/company/", { method: "PUT", body: JSON.stringify(data) });
@@ -519,10 +695,10 @@ export interface Category {
 }
 
 export const getCategories = () =>
-    apiFetch<Category[]>("/api/categories/");
+    cachedFetch<Category[]>("/api/categories/", TTL_LONG);
 
 export const getCategoryTree = () =>
-    apiFetch<Category[]>("/api/categories/tree");
+    cachedFetch<Category[]>("/api/categories/tree", TTL_LONG);
 
 export const createCategory = (data: Partial<Category>) =>
     apiFetch<Category>("/api/categories/", { method: "POST", body: JSON.stringify(data) });
@@ -548,7 +724,7 @@ export interface DepartmentData {
 }
 
 export const getDepartments = () =>
-    apiFetch<DepartmentData[]>("/api/departments/");
+    cachedFetch<DepartmentData[]>("/api/departments/", TTL_LONG);
 
 export const createDepartment = (data: Partial<DepartmentData>) =>
     apiFetch<DepartmentData>("/api/departments/", { method: "POST", body: JSON.stringify(data) });
@@ -581,7 +757,7 @@ export interface ApprovalRuleData {
 }
 
 export const getApprovalRules = () =>
-    apiFetch<ApprovalRuleData[]>("/api/approval-rules/");
+    cachedFetch<ApprovalRuleData[]>("/api/approval-rules/", TTL_MED);
 
 export const createApprovalRule = (data: Partial<ApprovalRuleData>) =>
     apiFetch<ApprovalRuleData>("/api/approval-rules/", { method: "POST", body: JSON.stringify(data) });
@@ -644,33 +820,57 @@ export const getRequisitions = (status?: string, priority?: string) => {
     if (status) params.push(`status=${status}`);
     if (priority) params.push(`priority=${priority}`);
     if (params.length) url += `?${params.join("&")}`;
-    return apiFetch<PurchaseRequisition[]>(url);
+    return cachedFetch<PurchaseRequisition[]>(url, TTL_MED);
 };
 
 export const getRequisition = (id: string) =>
     apiFetch<PurchaseRequisition>(`/api/requisitions/${id}`);
 
-export const createRequisition = (data: any, token?: string | null) =>
-    apiFetch<PurchaseRequisition>("/api/requisitions/", { method: "POST", body: JSON.stringify(data) }, token);
+export const createRequisition = async (data: any, token?: string | null) => {
+    const result = await apiFetch<PurchaseRequisition>("/api/requisitions/", { method: "POST", body: JSON.stringify(data) }, token);
+    apiCache.invalidate("/api/requisitions/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
-export const updateRequisition = (id: string, data: any, token?: string | null) =>
-    apiFetch<PurchaseRequisition>(`/api/requisitions/${id}`, { method: "PATCH", body: JSON.stringify(data) }, token);
+export const updateRequisition = async (id: string, data: any, token?: string | null) => {
+    const result = await apiFetch<PurchaseRequisition>(`/api/requisitions/${id}`, { method: "PATCH", body: JSON.stringify(data) }, token);
+    apiCache.invalidate("/api/requisitions/");
+    return result;
+};
 
-export const submitRequisition = (id: string, token?: string | null) =>
-    apiFetch<{ message: string }>(`/api/requisitions/${id}/submit`, { method: "POST" }, token);
+export const submitRequisition = async (id: string, token?: string | null) => {
+    const result = await apiFetch<{ message: string }>(`/api/requisitions/${id}/submit`, { method: "POST" }, token);
+    apiCache.invalidate("/api/requisitions/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
-export const approveRequisition = (id: string, token?: string | null) =>
-    apiFetch<{ message: string }>(`/api/requisitions/${id}/approve`, { method: "POST" }, token);
+export const approveRequisition = async (id: string, token?: string | null) => {
+    const result = await apiFetch<{ message: string }>(`/api/requisitions/${id}/approve`, { method: "POST" }, token);
+    apiCache.invalidate("/api/requisitions/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
-export const rejectRequisition = (id: string, reason?: string, token?: string | null) =>
-    apiFetch<{ message: string }>(`/api/requisitions/${id}/reject?reason=${encodeURIComponent(reason || '')}`, { method: "POST" }, token);
+export const rejectRequisition = async (id: string, reason?: string, token?: string | null) => {
+    const result = await apiFetch<{ message: string }>(`/api/requisitions/${id}/reject?reason=${encodeURIComponent(reason || '')}`, { method: "POST" }, token);
+    apiCache.invalidate("/api/requisitions/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
-export const convertPRtoPO = (id: string, token?: string | null, data?: { supplier_id?: string; line_item_prices?: Record<string, number>; notes?: string }) =>
-    apiFetch<{ message: string; po_id: string; po_number: string; supplier_name?: string; total_amount?: number }>(
+export const convertPRtoPO = async (id: string, token?: string | null, data?: { supplier_id?: string; line_item_prices?: Record<string, number>; notes?: string }) => {
+    const result = await apiFetch<{ message: string; po_id: string; po_number: string; supplier_name?: string; total_amount?: number }>(
         `/api/requisitions/${id}/convert-to-po`,
         { method: "POST", ...(data ? { body: JSON.stringify(data) } : {}) },
         token
     );
+    apiCache.invalidate("/api/requisitions/");
+    apiCache.invalidate("/api/purchase-orders/");
+    apiCache.invalidate("/api/__dashboard_stats");
+    return result;
+};
 
 export const getRequisitionStats = () =>
     apiFetch<{ total: number; by_status: Record<string, number>; pending_review: number }>("/api/requisitions/stats/summary");

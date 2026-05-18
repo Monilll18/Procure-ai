@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useState, useCallback } from "react";
+import { useCachedFetch } from "@/hooks/useCachedFetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,7 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Search, Loader2, Plus, Eye, X, Sparkles, Mail, FileText, CheckCircle, AlertTriangle, Copy, ChevronDown, Clock, Download, PackageCheck, Send, RefreshCw, Upload, MapPin } from "lucide-react";
+import { AnimatedDownloadButton } from "@/components/ui/animated-buttons";
 import TrackingPanel from "@/components/tracking/TrackingTimeline";
 import { toast } from "sonner";
 import { extractTextFromPDF } from "@/lib/pdf-extract";
@@ -28,6 +30,7 @@ import {
     type PurchaseOrder, type Supplier, type Product, type PODraft, type InvoiceMatch,
     type SupplierCatalogItem,
 } from "@/lib/api";
+import { TableSkeleton } from "@/components/ui/skeletons";
 import { useAuth } from "@clerk/nextjs";
 import { useAICall } from "@/hooks/useAICall";
 import { AIErrorBoundary } from "@/components/AIErrorBoundary";
@@ -45,8 +48,11 @@ const STATUS_LABELS: Record<string, string> = {
 export default function PurchaseOrdersPage() {
     const { getToken } = useAuth();
     const { can } = useRBAC();
-    const [orders, setOrders] = useState<PurchaseOrder[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data: ordersRaw, loading, refresh: loadOrders } = useCachedFetch<PurchaseOrder[]>({
+        cacheKey: "/api/purchase-orders/",
+        fetcher: getPurchaseOrders,
+    });
+    const orders: PurchaseOrder[] = ordersRaw ?? [];
     const [search, setSearch] = useState("");
     const [createOpen, setCreateOpen] = useState(false);
     const [viewOrder, setViewOrder] = useState<PurchaseOrder | null>(null);
@@ -76,15 +82,7 @@ export default function PurchaseOrdersPage() {
     const [poNotes, setPoNotes] = useState("");
     const [lineItems, setLineItems] = useState<{ product_id: string; quantity: number; unit_price: number }[]>([]);
 
-    const loadOrders = () => {
-        setLoading(true);
-        getPurchaseOrders()
-            .then(setOrders)
-            .catch(console.error)
-            .finally(() => setLoading(false));
-    };
 
-    useEffect(() => { loadOrders(); }, []);
 
     const handleViewOrder = (po: PurchaseOrder) => {
         // Cancel any in-flight AI requests from previous PO
@@ -520,15 +518,11 @@ export default function PurchaseOrdersPage() {
                                     </div>
                                 )}
 
-                                {/* Download PDF button */}
                                 <div className={viewOrder.status === "draft" ? "pt-3 border-t" : ""}>
-                                    <Button
-                                        variant="outline"
-                                        className="w-full gap-2"
-                                        onClick={() => downloadPoPdf(viewOrder.id)}
-                                    >
-                                        <Download className="h-4 w-4" /> Download PDF
-                                    </Button>
+                                    <AnimatedDownloadButton
+                                        className="w-full"
+                                        onDownload={() => downloadPoPdf(viewOrder.id)}
+                                    />
                                 </div>
                             </TabsContent>
 
@@ -956,12 +950,7 @@ export default function PurchaseOrdersPage() {
 
 function OrderTable({ orders, loading, search, onView }: { orders: PurchaseOrder[]; loading: boolean; search: string; onView: (po: PurchaseOrder) => void }) {
     if (loading) {
-        return (
-            <div className="flex items-center justify-center py-20">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <span className="ml-3 text-muted-foreground">Loading orders...</span>
-            </div>
-        );
+        return <TableSkeleton rows={6} cols={7} />;
     }
 
     return (

@@ -24,6 +24,8 @@ import {
     getAvailableProducts, addToCatalog, removeFromCatalog, updateCatalogStock,
     type CatalogItem, type PriceUpdate, type AvailableProduct,
 } from "@/lib/supplier-api";
+import { TableSkeleton } from "@/components/ui/skeletons";
+import { toast } from "sonner";
 
 const UPDATE_STATUS_COLORS: Record<string, string> = {
     pending: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
@@ -98,7 +100,7 @@ export default function CatalogPage() {
             setShowAdd(false);
             load();
         } catch (err: any) {
-            alert(`❌ ${err.message}`);
+            toast.error(`❌ ${err.message}`);
         } finally {
             setAdding(false);
         }
@@ -110,7 +112,7 @@ export default function CatalogPage() {
             await removeFromCatalog(item.id);
             load();
         } catch (err: any) {
-            alert(`❌ ${err.message}`);
+            toast.error(`❌ ${err.message}`);
         }
     };
 
@@ -127,7 +129,7 @@ export default function CatalogPage() {
             setPriceUpdateTarget(null);
             load();
         } catch (err: any) {
-            alert(`❌ ${err.message}`);
+            toast.error(`❌ ${err.message}`);
         } finally {
             setSubmitting(false);
         }
@@ -169,9 +171,7 @@ export default function CatalogPage() {
                 {/* Catalog Tab */}
                 <TabsContent value="catalog" className="mt-4">
                     {loading ? (
-                        <div className="flex items-center justify-center py-20">
-                            <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
-                        </div>
+                        <TableSkeleton rows={8} cols={6} />
                     ) : catalog.length === 0 ? (
                         <Card>
                             <CardContent className="py-16 text-center text-muted-foreground">
@@ -220,7 +220,7 @@ export default function CatalogPage() {
                                                                 await updateCatalogStock(item.id, parseInt(val));
                                                                 load();
                                                             } catch (err: any) {
-                                                                alert(err.message);
+                                                                toast.error(err.message);
                                                             }
                                                         }
                                                     }}

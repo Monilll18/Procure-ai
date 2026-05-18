@@ -22,11 +22,13 @@ import {
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUser, useAuth } from "@clerk/nextjs";
+import { useRBAC } from "@/lib/rbac";
 import {
     getTeamMembers, createTeamMember, updateTeamMember, deleteTeamMember,
     getAvailableRoles, getSystemSettings, updateSystemSettings,
     type TeamMember, type SystemSettings as SystemSettingsType,
 } from "@/lib/api";
+import { toast } from "sonner";
 
 // Fallback role info for display
 const ROLE_DISPLAY: Record<string, { label: string; color: string }> = {
@@ -40,6 +42,7 @@ const ROLE_DISPLAY: Record<string, { label: string; color: string }> = {
 export default function SettingsPage() {
     const { user } = useUser();
     const { getToken } = useAuth();
+    const { role: currentRole } = useRBAC();
     const [team, setTeam] = useState<TeamMember[]>([]);
     const [roles, setRoles] = useState<Record<string, { label: string; description: string; permissions: string[] }>>({});
     const [loading, setLoading] = useState(true);
@@ -115,7 +118,7 @@ export default function SettingsPage() {
             }
             setAddDialogOpen(false);
         } catch (err: any) {
-            alert(err.message || "Failed to save member");
+            toast.error(err.message || "Failed to save member");
         } finally {
             setSaving(false);
         }
@@ -128,7 +131,7 @@ export default function SettingsPage() {
             await deleteTeamMember(id, token || "");
             setTeam(prev => prev.filter(m => m.id !== id));
         } catch (err: any) {
-            alert(err.message || "Failed to remove member");
+            toast.error(err.message || "Failed to remove member");
         }
     };
 
@@ -139,7 +142,7 @@ export default function SettingsPage() {
             const updated = await updateSystemSettings(settings, token || "");
             setSettings(updated);
         } catch (err: any) {
-            alert(err.message || "Failed to save settings");
+            toast.error(err.message || "Failed to save settings");
         } finally {
             setSettingsSaving(false);
         }
@@ -385,7 +388,7 @@ export default function SettingsPage() {
                                     <p className="font-medium">Logged in as</p>
                                     <p className="text-sm text-muted-foreground">{user?.primaryEmailAddress?.emailAddress || "Unknown"}</p>
                                 </div>
-                                <Badge variant="secondary" className="bg-red-100 text-red-700">Admin</Badge>
+                                <Badge variant="secondary" className={getRoleInfo(currentRole).color}>{getRoleInfo(currentRole).label}</Badge>
                             </div>
 
                             <Button className="w-full" onClick={handleSaveSettings} disabled={settingsSaving}>

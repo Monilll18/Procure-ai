@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useCachedFetch } from "@/hooks/useCachedFetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,8 +20,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Search, Package, Loader2, Plus, MoreHorizontal, Edit, Trash2 } from "lucide-react";
 import { getProducts, createProduct, updateProduct, deleteProduct, type Product } from "@/lib/api";
+import { PageSkeleton } from "@/components/ui/skeletons";
 import { useAuth } from "@clerk/nextjs";
 import { useRBAC } from "@/lib/rbac";
+import { toast } from "sonner";
 
 const CATEGORIES = [
     "Accessories", "Audio", "Computing", "Display", "Input",
@@ -30,28 +33,25 @@ const CATEGORIES = [
 export default function ProductsPage() {
     const { getToken } = useAuth();
     const { can } = useRBAC();
-    const [products, setProducts] = useState<Product[]>([]);
-    const [loading, setLoading] = useState(true);
+    const {
+        data: productsRaw,
+        loading,
+        refresh: loadProducts,
+    } = useCachedFetch<Product[]>({
+        cacheKey: "/api/products/",
+        fetcher: getProducts,
+    });
+    const products: Product[] = productsRaw ?? [];
+
+    // UI-only state (not cached — ephemeral per visit)
     const [search, setSearch] = useState("");
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
     const [saving, setSaving] = useState(false);
-
-    // Form state
     const [formData, setFormData] = useState({
         name: "", sku: "", category: "Computing", unit: "pcs",
         reorder_point: 10, reorder_quantity: 50,
     });
-
-    const loadProducts = () => {
-        setLoading(true);
-        getProducts()
-            .then(setProducts)
-            .catch(console.error)
-            .finally(() => setLoading(false));
-    };
-
-    useEffect(() => { loadProducts(); }, []);
 
     const filtered = products.filter(
         (p) =>
@@ -87,7 +87,7 @@ export default function ProductsPage() {
             setDialogOpen(false);
             loadProducts();
         } catch (err: any) {
-            alert(err.message || "Failed to save product");
+            toast.error(err.message || "Failed to save product");
         } finally {
             setSaving(false);
         }
@@ -100,7 +100,7 @@ export default function ProductsPage() {
             await deleteProduct(product.id, token);
             loadProducts();
         } catch (err: any) {
-            alert(err.message || "Failed to delete product");
+            toast.error(err.message || "Failed to delete product");
         }
     };
 
@@ -138,10 +138,7 @@ export default function ProductsPage() {
             {/* Products Table */}
             <div className="rounded-xl border bg-card shadow-sm">
                 {loading ? (
-                    <div className="flex items-center justify-center py-20">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                        <span className="ml-3 text-muted-foreground">Loading products...</span>
-                    </div>
+                    <PageSkeleton rows={6} cols={6} />
                 ) : (
                     <Table>
                         <TableHeader>

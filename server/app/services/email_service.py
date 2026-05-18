@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 GMAIL_USER = os.getenv("GMAIL_USER", "")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 FROM_NAME = os.getenv("EMAIL_FROM_NAME", "ProcureAI")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 
 
 # ─── Send Functions ──────────────────────────────────────────
@@ -40,9 +41,10 @@ def send_email(to: str, subject: str, html: str) -> bool:
         msg["Subject"] = subject
         msg.attach(MIMEText(html, "html"))
 
+        # Port 465 + SSL_from_start works on Render/Railway/cloud hosts.
+        # Port 587 + STARTTLS is often blocked by cloud providers (Errno 101).
         context = ssl.create_default_context()
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls(context=context)
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
             server.login(GMAIL_USER, GMAIL_APP_PASSWORD)
             server.sendmail(GMAIL_USER, to, msg.as_string())
 
@@ -110,7 +112,7 @@ def send_approval_needed(
     requester_name: str,
     amount: float,
     purpose: str,
-    app_url: str = "http://localhost:3000",
+    app_url: str = FRONTEND_URL,
 ):
     """Send email when a PR needs approval."""
     body = f"""
@@ -149,7 +151,7 @@ def send_pr_approved(
     requester_name: str,
     pr_number: str,
     approver_name: str,
-    app_url: str = "http://localhost:3000",
+    app_url: str = FRONTEND_URL,
 ):
     """Send email when a PR is approved."""
     body = f"""
@@ -173,7 +175,7 @@ def send_pr_rejected(
     pr_number: str,
     approver_name: str,
     reason: str = "",
-    app_url: str = "http://localhost:3000",
+    app_url: str = FRONTEND_URL,
 ):
     """Send email when a PR is rejected."""
     reason_html = f'<p style="color: #4b5563;"><strong>Reason:</strong> {reason}</p>' if reason else ""
@@ -238,7 +240,7 @@ def send_low_stock_alert(
     current_stock: int,
     min_stock: int,
     unit: str = "units",
-    app_url: str = "http://localhost:3000",
+    app_url: str = FRONTEND_URL,
 ):
     """Send low stock alert email."""
     body = f"""
@@ -283,7 +285,7 @@ def send_goods_received(
     requester_name: str,
     po_number: str,
     items_summary: str,
-    app_url: str = "http://localhost:3000",
+    app_url: str = FRONTEND_URL,
 ):
     """Send email when goods are received for a PO."""
     body = f"""
@@ -306,7 +308,7 @@ def send_password_reset_email(
     supplier_email: str,
     supplier_name: str,
     reset_url: str,
-    app_url: str = "http://localhost:3000",
+    app_url: str = FRONTEND_URL,
 ) -> bool:
     """Send password reset email to supplier."""
     full_url = f"{app_url}{reset_url}"

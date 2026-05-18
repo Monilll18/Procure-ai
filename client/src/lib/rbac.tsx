@@ -110,12 +110,31 @@ export function RBACProvider({ children }: { children: React.ReactNode }) {
             return;
         }
 
+        const CACHE_KEY = `rbac_profile_${user.id}`;
+        const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
         const fetchProfile = async () => {
+            // ── 1. Try sessionStorage cache first ──────────────────────
+            try {
+                const raw = sessionStorage.getItem(CACHE_KEY);
+                if (raw) {
+                    const { data, expiresAt } = JSON.parse(raw);
+                    if (Date.now() < expiresAt) {
+                        setProfile(data);
+                        setLoading(false);
+                        return; // Served from cache — no DB hit
+                    }
+                    sessionStorage.removeItem(CACHE_KEY); // Expired
+                }
+            } catch {
+                // sessionStorage not available (SSR/private mode) — fall through
+            }
+
+            // ── 2. Cache miss: fetch from backend ──────────────────────
             try {
                 const token = await getToken();
                 if (!token) { setLoading(false); return; }
 
-                // Pass email & name so backend can auto-create on first login
                 const email = user.primaryEmailAddress?.emailAddress || "";
                 const name = user.fullName || user.firstName || "User";
                 const url = `/api/users/me?email=${encodeURIComponent(email)}&full_name=${encodeURIComponent(name)}`;
@@ -129,6 +148,14 @@ export function RBACProvider({ children }: { children: React.ReactNode }) {
                     const data = await res.json();
                     console.log("[RBAC] Profile loaded:", data.email, "→ role:", data.role);
                     setProfile(data);
+
+                    // ── 3. Write to sessionStorage cache ───────────────
+                    try {
+                        sessionStorage.setItem(CACHE_KEY, JSON.stringify({
+                            data,
+                            expiresAt: Date.now() + CACHE_TTL,
+                        }));
+                    } catch { /* quota exceeded — ignore */ }
                 } else {
                     const err = await res.text();
                     console.error("[RBAC] Profile fetch failed:", res.status, err);

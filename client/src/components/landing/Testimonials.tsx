@@ -77,7 +77,7 @@ function TestimonialCard({ img, name, title, quote, avatar }: (typeof testimonia
 export function Testimonials() {
     return (
         <ClickSpark sparkColor="#fff" sparkSize={10} sparkRadius={15} sparkCount={8} duration={400}>
-            <section id="testimonials" className="relative z-10 py-24 bg-[#010101] overflow-hidden flex flex-col items-center justify-center">
+            <section id="testimonials" className="relative z-10 py-24 bg-[#010101] overflow-hidden flex flex-col items-center justify-center" style={{ contentVisibility: "auto", containIntrinsicSize: "auto 900px" }}>
                 {/* CSS Static Grid Background - Zero JS Overhead */}
                 <div 
                     className="absolute inset-0 z-0 opacity-[0.05] pointer-events-none"

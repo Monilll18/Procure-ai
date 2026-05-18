@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useCachedFetch } from "@/hooks/useCachedFetch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Download, DollarSign, ShoppingCart, Users, TrendingUp, Loader2 } from "lucide-react";
@@ -12,34 +13,29 @@ import {
     getSpendByCategory, getSupplierPerformance, getMonthlySpend,
     CategorySpend, SupplierPerformance, MonthlySpend,
 } from "@/lib/api";
+import { StatCardsSkeleton } from "@/components/ui/skeletons";
 
 export default function AnalyticsPage() {
-    const [categoryData, setCategoryData] = useState<CategorySpend[]>([]);
-    const [supplierData, setSupplierData] = useState<SupplierPerformance[]>([]);
-    const [monthlyData, setMonthlyData] = useState<MonthlySpend[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data: categoryRaw, loading: l1 } = useCachedFetch<CategorySpend[]>({
+        cacheKey: "/api/analytics/spend-by-category",
+        fetcher: getSpendByCategory,
+    });
+    const { data: supplierRaw, loading: l2 } = useCachedFetch<SupplierPerformance[]>({
+        cacheKey: "/api/analytics/supplier-performance",
+        fetcher: getSupplierPerformance,
+    });
+    const { data: monthlyRaw, loading: l3 } = useCachedFetch<MonthlySpend[]>({
+        cacheKey: "/api/analytics/monthly-spend",
+        fetcher: getMonthlySpend,
+    });
 
-    useEffect(() => {
-        Promise.all([
-            getSpendByCategory(),
-            getSupplierPerformance(),
-            getMonthlySpend(),
-        ])
-            .then(([categories, suppliers, monthly]) => {
-                setCategoryData(categories);
-                setSupplierData(suppliers);
-                setMonthlyData(monthly);
-            })
-            .catch(console.error)
-            .finally(() => setLoading(false));
-    }, []);
+    const loading = l1 || l2 || l3;
+    const categoryData: CategorySpend[] = categoryRaw ?? [];
+    const supplierData: SupplierPerformance[] = supplierRaw ?? [];
+    const monthlyData: MonthlySpend[] = monthlyRaw ?? [];
 
     if (loading) {
-        return (
-            <div className="flex items-center justify-center min-h-[60vh]">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-        );
+        return <StatCardsSkeleton count={4} />;
     }
 
     const totalSpend = categoryData.reduce((s, c) => s + c.value, 0);

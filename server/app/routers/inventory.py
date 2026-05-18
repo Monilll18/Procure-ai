@@ -12,6 +12,7 @@ from app.schemas.inventory import (
     StockAdjustRequest, StockMovementResponse,
 )
 from app.middleware.auth import get_current_user
+from app.services.cache import cache, TTL_LIST
 
 router = APIRouter()
 
@@ -55,8 +56,14 @@ async def list_inventory(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user),
 ):
     """List all inventory items with product info."""
+    cache_key = f"inventory:list:{skip}:{limit}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     items = (
         db.query(Inventory)
         .options(joinedload(Inventory.product))
@@ -64,19 +71,30 @@ async def list_inventory(
         .limit(limit)
         .all()
     )
-    return [_enrich_inventory(item) for item in items]
+    result = [_enrich_inventory(item) for item in items]
+    cache.set(cache_key, result, TTL_LIST)
+    return result
 
 
 @router.get("/alerts", response_model=List[InventoryResponse])
-async def get_low_stock_alerts(db: Session = Depends(get_db)):
+async def get_low_stock_alerts(
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user),
+):
     """Get inventory items where current_stock <= min_stock."""
+    cached = cache.get("inventory:alerts")
+    if cached is not None:
+        return cached
+
     items = (
         db.query(Inventory)
         .options(joinedload(Inventory.product))
         .filter(Inventory.current_stock <= Inventory.min_stock)
         .all()
     )
-    return [_enrich_inventory(item) for item in items]
+    result = [_enrich_inventory(item) for item in items]
+    cache.set("inventory:alerts", result, TTL_LIST)
+    return result
 
 
 # ─── Stock Movements ────────────────────────────────────────
@@ -150,6 +168,8 @@ async def adjust_stock(
         .filter(StockMovement.id == movement.id)
         .first()
     )
+    # Invalidate inventory cache — stock levels changed
+    cache.invalidate_pattern("inventory:*")
     return _enrich_movement(movement)
 
 
@@ -174,7 +194,7 @@ async def create_inventory(
     db.add(inv)
     db.commit()
     db.refresh(inv)
-
+    cache.invalidate_pattern("inventory:*")
     return _enrich_inventory(inv)
 
 
@@ -216,4 +236,5 @@ async def update_inventory(
 
     db.commit()
     db.refresh(inv)
+    cache.invalidate_pattern("inventory:*")
     return _enrich_inventory(inv)

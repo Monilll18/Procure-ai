@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useCachedFetch } from "@/hooks/useCachedFetch";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,8 +19,11 @@ import {
     Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
-import { getInventory, type InventoryItem } from "@/lib/api";
+import { getInventory, adjustStock, type InventoryItem } from "@/lib/api";
 import { useRBAC } from "@/lib/rbac";
+import { useAuth } from "@clerk/nextjs";
+import { toast } from "sonner";
+import { TableSkeleton } from "@/components/ui/skeletons";
 
 function getStockStatus(item: InventoryItem): string {
     if (item.current_stock === 0) return "Critical";
@@ -31,22 +35,16 @@ function getStockStatus(item: InventoryItem): string {
 export default function InventoryPage() {
     const router = useRouter();
     const { can } = useRBAC();
-    const [inventory, setInventory] = useState<InventoryItem[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { getToken } = useAuth();
+    const { data: inventoryRaw, loading, refresh: loadInventory } = useCachedFetch<InventoryItem[]>({
+        cacheKey: "/api/inventory/",
+        fetcher: getInventory,
+    });
+    const inventory: InventoryItem[] = inventoryRaw ?? [];
     const [search, setSearch] = useState("");
     const [statusFilter, setStatusFilter] = useState("all");
     const [adjustItem, setAdjustItem] = useState<InventoryItem | null>(null);
     const [adjustQty, setAdjustQty] = useState(0);
-
-    const loadInventory = () => {
-        setLoading(true);
-        getInventory()
-            .then(setInventory)
-            .catch(console.error)
-            .finally(() => setLoading(false));
-    };
-
-    useEffect(() => { loadInventory(); }, []);
 
     // Apply search + status filter
     const filtered = inventory.filter((i) => {
@@ -67,10 +65,20 @@ export default function InventoryPage() {
     const lowCount = inventory.filter((i) => i.current_stock > 0 && i.current_stock <= i.min_stock).length;
     const healthyCount = inventory.filter((i) => i.current_stock > i.min_stock).length;
 
-    const handleAdjust = () => {
-        // In a real app, this would call an API endpoint to update stock
-        alert(`Stock adjustment of ${adjustQty} would be applied to ${adjustItem?.product_name}. (Backend endpoint needed for PATCH /api/inventory/{id})`);
-        setAdjustItem(null);
+    const handleAdjust = async () => {
+        if (!adjustItem) return;
+        try {
+            const token = await getToken();
+            await adjustStock(
+                { product_id: adjustItem.product_id, quantity: adjustQty, type: adjustQty > 0 ? "GOODS_IN" : "GOODS_OUT", notes: "Manual adjustment from inventory page" },
+                token || ""
+            );
+            toast.success(`Stock adjusted by ${adjustQty > 0 ? "+" : ""}${adjustQty} for ${adjustItem.product_name}`);
+            setAdjustItem(null);
+            loadInventory();
+        } catch (err: any) {
+            toast.error(err.message || "Failed to adjust stock");
+        }
     };
 
     return (
@@ -136,10 +144,7 @@ export default function InventoryPage() {
             {/* Inventory List */}
             <div className="rounded-xl border bg-card shadow-sm">
                 {loading ? (
-                    <div className="flex items-center justify-center py-20">
-                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                        <span className="ml-3 text-muted-foreground">Loading inventory...</span>
-                    </div>
+                    <TableSkeleton rows={6} cols={6} />
                 ) : (
                     <Table>
                         <TableHeader>

@@ -17,6 +17,10 @@ router = APIRouter()
 @router.get("/spend-by-category")
 async def spend_by_category(db: Session = Depends(get_db)):
     """Total spend grouped by product category."""
+    cached = cache.get("analytics:spend-by-category")
+    if cached is not None:
+        return cached
+
     results = (
         db.query(
             Product.category,
@@ -29,12 +33,18 @@ async def spend_by_category(db: Session = Depends(get_db)):
         .order_by(func.sum(POLineItem.total_price).desc())
         .all()
     )
-    return [{"name": r.category, "value": round(r.total, 2)} for r in results]
+    data = [{"name": r.category, "value": round(r.total, 2)} for r in results]
+    cache.set("analytics:spend-by-category", data, TTL_ANALYTICS)
+    return data
 
 
 @router.get("/supplier-performance")
 async def supplier_performance(db: Session = Depends(get_db)):
     """Supplier ratings and PO counts for performance comparison."""
+    cached = cache.get("analytics:supplier-performance")
+    if cached is not None:
+        return cached
+
     results = (
         db.query(
             Supplier.name,
@@ -47,20 +57,27 @@ async def supplier_performance(db: Session = Depends(get_db)):
         .order_by(func.sum(PurchaseOrder.total_amount).desc().nulls_last())
         .all()
     )
-    return [
+    data = [
         {
             "name": r.name,
-            "rating": round(r.rating * 20, 1),  # Convert 5-star to 100-scale
+            "rating": round(r.rating * 20, 1),
             "orders": r.order_count,
             "totalSpend": round(float(r.total_spend), 2),
         }
         for r in results
     ]
+    cache.set("analytics:supplier-performance", data, TTL_ANALYTICS)
+    return data
 
 
 @router.get("/monthly-spend")
 async def monthly_spend(months: int = 6, db: Session = Depends(get_db)):
     """Aggregate spend by month for the last N months."""
+    cache_key = f"analytics:monthly-spend:{months}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     cutoff = datetime.utcnow() - timedelta(days=months * 30)
     results = (
         db.query(
@@ -81,7 +98,7 @@ async def monthly_spend(months: int = 6, db: Session = Depends(get_db)):
     month_names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    return [
+    data = [
         {
             "name": f"{month_names[int(r.month)]} {int(r.year)}",
             "total": round(float(r.total), 2),
@@ -89,33 +106,32 @@ async def monthly_spend(months: int = 6, db: Session = Depends(get_db)):
         }
         for r in results
     ]
+    cache.set(cache_key, data, TTL_ANALYTICS)
+    return data
 
 
 @router.get("/summary")
 async def analytics_summary(db: Session = Depends(get_db)):
     """Key analytics KPIs."""
-    # Total spend (non-draft, non-cancelled)
+    cached = cache.get("analytics:summary")
+    if cached is not None:
+        return cached
+
     total_spend = (
         db.query(func.coalesce(func.sum(PurchaseOrder.total_amount), 0))
         .filter(PurchaseOrder.status.notin_([POStatus.draft, POStatus.cancelled]))
         .scalar()
     )
-
-    # Average order value
     avg_order = (
         db.query(func.coalesce(func.avg(PurchaseOrder.total_amount), 0))
         .filter(PurchaseOrder.status.notin_([POStatus.draft, POStatus.cancelled]))
         .scalar()
     )
-
-    # Active suppliers count
     active_suppliers = (
         db.query(func.count(Supplier.id))
         .filter(Supplier.status == "active")
         .scalar()
     )
-
-    # Total POs this month
     month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0)
     monthly_pos = (
         db.query(func.count(PurchaseOrder.id))
@@ -123,9 +139,11 @@ async def analytics_summary(db: Session = Depends(get_db)):
         .scalar()
     )
 
-    return {
+    data = {
         "totalSpend": round(float(total_spend), 2),
         "avgOrderValue": round(float(avg_order), 2),
         "activeSuppliers": active_suppliers,
         "monthlyOrders": monthly_pos,
     }
+    cache.set("analytics:summary", data, TTL_ANALYTICS)
+    return data

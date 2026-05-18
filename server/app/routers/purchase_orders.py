@@ -17,8 +17,12 @@ from app.models.stock_movement import StockMovement
 from app.schemas.purchase_order import PurchaseOrderCreate, PurchaseOrderResponse
 from app.middleware.auth import get_current_user
 from app.middleware.role_guard import require_role
+from app.services.cache import cache, TTL_LIST
 
 router = APIRouter()
+
+# Patterns to invalidate whenever a PO is written
+_PO_INVALIDATE = ["purchase_orders:*", "analytics:*", "inventory:*"]
 
 
 def _generate_po_number() -> str:
@@ -73,21 +77,29 @@ async def list_purchase_orders(
     limit: int = 100,
     status: str = None,
     db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user),
 ):
     """List all purchase orders with optional status filter."""
+    cache_key = f"purchase_orders:list:{skip}:{limit}:{status or 'all'}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     query = (
         db.query(PurchaseOrder)
         .options(joinedload(PurchaseOrder.supplier), joinedload(PurchaseOrder.line_items))
     )
     if status:
         query = query.filter(PurchaseOrder.status == status)
-    
+
     pos = query.order_by(PurchaseOrder.created_at.desc()).offset(skip).limit(limit).all()
-    return [_enrich_po(po, db) for po in pos]
+    result = [_enrich_po(po, db) for po in pos]
+    cache.set(cache_key, result, TTL_LIST)
+    return result
 
 
 @router.get("/{po_id}", response_model=PurchaseOrderResponse)
-async def get_purchase_order(po_id: UUID, db: Session = Depends(get_db)):
+async def get_purchase_order(po_id: UUID, db: Session = Depends(get_db), user_id: str = Depends(get_current_user)):
     """Get a single purchase order by ID."""
     po = (
         db.query(PurchaseOrder)
@@ -104,6 +116,7 @@ async def get_purchase_order(po_id: UUID, db: Session = Depends(get_db)):
 async def get_supplier_catalog(
     supplier_id: UUID,
     db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user),
 ):
     """Get products that a supplier sells (their catalog with prices)."""
     prices = (
@@ -186,7 +199,8 @@ async def create_purchase_order(
     db.add(po)
     db.commit()
     db.refresh(po)
-    
+    cache.invalidate_many(_PO_INVALIDATE)
+
     po = (
         db.query(PurchaseOrder)
         .options(joinedload(PurchaseOrder.supplier), joinedload(PurchaseOrder.line_items))
@@ -217,6 +231,7 @@ async def submit_for_approval(
     po.status = POStatus.pending_approval
     db.commit()
     db.refresh(po)
+    cache.invalidate_many(_PO_INVALIDATE)
     return _enrich_po(po, db)
 
 
@@ -346,6 +361,7 @@ async def receive_goods(
         po.status = POStatus.partially_received
 
     db.commit()
+    cache.invalidate_many(_PO_INVALIDATE)
 
     return {
         "message": f"Goods receipt recorded for PO {po.po_number}",
@@ -513,6 +529,7 @@ async def send_po_to_supplier(
     po.status = POStatus.sent
     po.sent_at = datetime.utcnow()
     db.commit()
+    cache.invalidate_many(_PO_INVALIDATE)
 
     return {
         "message": f"PO {po.po_number} sent to {supplier.email}",
@@ -537,6 +554,7 @@ async def delete_purchase_order(
 
     db.delete(po)
     db.commit()
+    cache.invalidate_many(_PO_INVALIDATE)
 
 
 # ─── PDF Generation ─────────────────────────────────────────

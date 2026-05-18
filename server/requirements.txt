@@ -28,3 +28,4 @@ slowapi
 reportlab
 resend
 sniffio
+redis[hiredis]

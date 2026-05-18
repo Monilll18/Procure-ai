@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -5,6 +6,8 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from dotenv import load_dotenv
 import os
+
+from app.services.cache import cache
 
 from app.middleware.rate_limit import limiter
 
@@ -17,12 +20,23 @@ from app.routers import (
 
 load_dotenv()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── Startup ──────────────────────────────────────────────
+    cache.connect()          # Connect Redis (no-op + warning if unavailable)
+    yield
+    # ── Shutdown ─────────────────────────────────────────────
+    cache.close()
+
+
 app = FastAPI(
     title="ProcureAI API",
     description="AI-powered Procurement Management System API",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # Attach rate limiter state

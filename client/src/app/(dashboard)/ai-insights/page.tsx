@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useCachedFetch } from "@/hooks/useCachedFetch";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import {
 import { getInsights, getForecast, Insight, ForecastPoint, aiFraudScan, aiGetPriceAnomalies, aiGetProductForecast, ProductForecast, getPriceUpdates, approvePriceUpdate, rejectPriceUpdate, type PriceUpdateItem } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
 import { CheckCircle, XCircle } from "lucide-react";
+import { StatCardsSkeleton } from "@/components/ui/skeletons";
 
 // ─── Tab config ──────────────────────────────────────────────
 const TABS = [
@@ -30,56 +32,45 @@ type TabId = typeof TABS[number]["id"];
 
 export default function AIInsightsPage() {
     const { getToken } = useAuth();
-    const [insights, setInsights] = useState<Insight[]>([]);
-    const [forecast, setForecast] = useState<ForecastPoint[]>([]);
-    const [productForecast, setProductForecast] = useState<ProductForecast[]>([]);
-    const [fraudAlerts, setFraudAlerts] = useState<any[]>([]);
-    const [priceAnomalies, setPriceAnomalies] = useState<any[]>([]);
-    const [supplierPriceUpdates, setSupplierPriceUpdates] = useState<PriceUpdateItem[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [mlLoading, setMlLoading] = useState(false);
     const [activeTab, setActiveTab] = useState<TabId>("overview");
 
-    const loadData = () => {
-        setLoading(true);
-        Promise.all([getInsights(), getForecast(), aiGetProductForecast().catch(() => [])])
-            .then(([ins, fc, pf]) => {
-                setInsights(ins);
-                setForecast(fc);
-                setProductForecast(pf as ProductForecast[]);
-            })
-            .catch(console.error)
-            .finally(() => setLoading(false));
-    };
+    const { data: insightsRaw, loading, refresh: loadData } = useCachedFetch<Insight[]>({
+        cacheKey: "/api/insights/",
+        fetcher: getInsights,
+    });
+    const { data: forecastRaw } = useCachedFetch<ForecastPoint[]>({
+        cacheKey: "/api/insights/forecast",
+        fetcher: getForecast,
+    });
+    const { data: productForecastRaw } = useCachedFetch<ProductForecast[]>({
+        cacheKey: "/api/insights/forecast/products",
+        fetcher: () => aiGetProductForecast().catch(() => []),
+    });
+    const { data: fraudAlertsRaw, loading: mlLoading, refresh: loadMLData } = useCachedFetch<any[]>({
+        cacheKey: "/api/ai/fraud-scan",
+        fetcher: () => aiFraudScan().catch(() => []),
+    });
+    const { data: priceAnomaliesRaw } = useCachedFetch<any[]>({
+        cacheKey: "/api/ai/price-anomalies",
+        fetcher: () => aiGetPriceAnomalies().catch(() => []),
+    });
+    const { data: supplierPriceUpdatesRaw } = useCachedFetch<PriceUpdateItem[]>({
+        cacheKey: "/api/supplier-prices/price-updates",
+        fetcher: async () => {
+            const token = (await getToken()) || undefined;
+            return getPriceUpdates(undefined, token).catch(() => []);
+        },
+    });
 
-    const loadMLData = async () => {
-        setMlLoading(true);
-        const token = (await getToken()) || undefined;
-        Promise.all([
-            aiFraudScan().catch(() => []),
-            aiGetPriceAnomalies().catch(() => []),
-            getPriceUpdates(undefined, token).catch(() => []),
-        ])
-            .then(([fraud, anomalies, priceUpdates]) => {
-                setFraudAlerts(fraud);
-                setPriceAnomalies(anomalies);
-                setSupplierPriceUpdates(priceUpdates);
-            })
-            .catch(console.error)
-            .finally(() => setMlLoading(false));
-    };
-
-    useEffect(() => {
-        loadData();
-        loadMLData();
-    }, []);
+    const insights: Insight[] = insightsRaw ?? [];
+    const forecast: ForecastPoint[] = forecastRaw ?? [];
+    const productForecast: ProductForecast[] = productForecastRaw ?? [];
+    const fraudAlerts: any[] = fraudAlertsRaw ?? [];
+    const priceAnomalies: any[] = priceAnomaliesRaw ?? [];
+    const supplierPriceUpdates: PriceUpdateItem[] = supplierPriceUpdatesRaw ?? [];
 
     if (loading) {
-        return (
-            <div className="flex items-center justify-center min-h-[60vh]">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-        );
+        return <StatCardsSkeleton count={4} />;
     }
 
     // Group insights by type

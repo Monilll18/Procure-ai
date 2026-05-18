@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
 import secrets
+import os
 from datetime import datetime, timedelta, timezone
 
 from app.database import get_db
@@ -11,6 +12,9 @@ from app.models.supplier_user import SupplierUser, SupplierInvitation, Invitatio
 from app.schemas.supplier import SupplierCreate, SupplierUpdate, SupplierResponse
 from app.middleware.auth import get_current_user
 from app.middleware.supplier_auth import hash_password
+from app.services.cache import cache, TTL_LIST
+
+_FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 
 router = APIRouter()
 
@@ -30,7 +34,7 @@ def _send_supplier_invite_email(
     try:
         from app.services.email_service import send_email, _base_template
 
-        portal_url = "http://localhost:3000/supplier-portal/activate"
+        portal_url = f"{_FRONTEND_URL}/supplier-portal/activate"
         activate_link = f"{portal_url}?token={invite_token}"
 
         body = f"""
@@ -66,12 +70,13 @@ def _send_supplier_invite_email(
         """
 
         html = _base_template(title="Supplier Portal Invitation", body=body)
-        send_email(
+        # Return actual send result so caller knows if email delivered
+        result = send_email(
             to=email,
             subject=f"🔑 {buyer_company} invited you to their Supplier Portal",
             html=html,
         )
-        return True
+        return result
     except Exception as e:
         print(f"[INVITE EMAIL ERROR] {e}")
         return False
@@ -85,20 +90,34 @@ async def list_suppliers(
     db: Session = Depends(get_db),
 ):
     """List all suppliers with optional status filter."""
+    cache_key = f"suppliers:list:{skip}:{limit}:{status or 'all'}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     query = db.query(Supplier)
     if status:
         query = query.filter(Supplier.status == status)
     suppliers = query.offset(skip).limit(limit).all()
-    return suppliers
+    result = [SupplierResponse.model_validate(s).model_dump(mode="json") for s in suppliers]
+    cache.set(cache_key, result, TTL_LIST)
+    return result
 
 
 @router.get("/{supplier_id}", response_model=SupplierResponse)
 async def get_supplier(supplier_id: UUID, db: Session = Depends(get_db)):
     """Get a single supplier by ID."""
+    cache_key = f"suppliers:single:{supplier_id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first()
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
-    return supplier
+    result = SupplierResponse.model_validate(supplier).model_dump(mode="json")
+    cache.set(cache_key, result, TTL_LIST)
+    return result
 
 
 @router.post("/", status_code=201)
@@ -137,7 +156,7 @@ def _create_portal_invite(db: Session, supplier: Supplier, invited_by: str) -> d
 
     temp_password = _generate_temp_password()
     invite_token = secrets.token_urlsafe(32)
-    portal_url = "http://localhost:3000/supplier-portal/login"
+    portal_url = f"{_FRONTEND_URL}/supplier-portal/login"
 
     # Create supplier user with temp password
     user = SupplierUser(

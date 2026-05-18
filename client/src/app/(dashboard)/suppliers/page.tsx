@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useCachedFetch } from "@/hooks/useCachedFetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,19 +32,27 @@ import { useAuth } from "@clerk/nextjs";
 import { useAICall } from "@/hooks/useAICall";
 import { AIErrorBoundary } from "@/components/AIErrorBoundary";
 import { useRBAC } from "@/lib/rbac";
+import { SupplierCardsSkeleton } from "@/components/ui/skeletons";
 
 const PRICE_SHEET_MAX_CHARS = 20000;
 
 export default function SuppliersPage() {
     const { getToken } = useAuth();
     const { can } = useRBAC();
-    const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-    const [loading, setLoading] = useState(true);
+    const {
+        data: suppliersRaw,
+        loading,
+        refresh: loadSuppliers,
+    } = useCachedFetch<Supplier[]>({
+        cacheKey: "/api/suppliers/",
+        fetcher: getSuppliers,
+    });
+    const suppliers: Supplier[] = suppliersRaw ?? [];
+
     const [search, setSearch] = useState("");
     const [dialogOpen, setDialogOpen] = useState(false);
     const [saving, setSaving] = useState(false);
     const [viewSupplier, setViewSupplier] = useState<Supplier | null>(null);
-
     const [formData, setFormData] = useState({
         name: "", email: "", phone: "", address: "", rating: 4.0, status: "active" as const,
         send_portal_invite: true,
@@ -51,30 +60,14 @@ export default function SuppliersPage() {
     const [aiScore, setAiScore] = useState<any>(null);
     const [aiScoreLoading, setAiScoreLoading] = useState(false);
     const [aiScoreError, setAiScoreError] = useState("");
-
-    // Price Sheet OCR state
     const [ocrText, setOcrText] = useState("");
     const [ocrResult, setOcrResult] = useState<any>(null);
     const [ocrError, setOcrError] = useState("");
     const fileInputRef = useRef<HTMLInputElement>(null);
-
-    // Delete confirmation modal state
     const [deleteTarget, setDeleteTarget] = useState<Supplier | null>(null);
     const [deleting, setDeleting] = useState(false);
-
-    // Portal credentials modal state
     const [credentials, setCredentials] = useState<PortalCredentials | null>(null);
     const [resending, setResending] = useState(false);
-
-    const loadSuppliers = () => {
-        setLoading(true);
-        getSuppliers()
-            .then(setSuppliers)
-            .catch(console.error)
-            .finally(() => setLoading(false));
-    };
-
-    useEffect(() => { loadSuppliers(); }, []);
 
     // Fetch AI score when supplier is viewed
     useEffect(() => {
@@ -116,7 +109,7 @@ export default function SuppliersPage() {
                 setCredentials(result.portal_credentials);
             }
         } catch (err: any) {
-            alert(err.message || "Failed to add supplier");
+            toast.error(err.message || "Failed to add supplier");
         } finally {
             setSaving(false);
         }
@@ -193,10 +186,7 @@ export default function SuppliersPage() {
 
             {/* Loading State */}
             {loading ? (
-                <div className="flex items-center justify-center py-20">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <span className="ml-3 text-muted-foreground">Loading suppliers...</span>
-                </div>
+                <SupplierCardsSkeleton count={6} />
             ) : (
                 <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                     {filtered.length === 0 ? (
@@ -675,7 +665,7 @@ export default function SuppliersPage() {
                         setViewSupplier(null);
                         loadSuppliers();
                     } catch (err: any) {
-                        alert(err.message || "Failed to delete supplier");
+                        toast.error(err.message || "Failed to delete supplier");
                     } finally {
                         setDeleting(false);
                     }

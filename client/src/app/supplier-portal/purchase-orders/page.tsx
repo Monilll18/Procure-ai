@@ -23,6 +23,8 @@ import {
     getSupplierPOs, supplierAcceptPO, supplierRejectPO, supplierPartialAccept,
     createShipment, type SupplierPO,
 } from "@/lib/supplier-api";
+import { PageSkeleton } from "@/components/ui/skeletons";
+import { toast } from "sonner";
 
 const STATUS_COLORS: Record<string, string> = {
     sent: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
@@ -127,7 +129,7 @@ export default function SupplierPurchaseOrdersPage() {
             closeAction();
             loadPOs();
         } catch (err: any) {
-            alert(`❌ ${err.message}`);
+            toast.error(`❌ ${err.message}`);
         } finally {
             setActing(false);
         }
@@ -168,9 +170,7 @@ export default function SupplierPurchaseOrdersPage() {
 
             {/* PO List */}
             {loading ? (
-                <div className="flex items-center justify-center py-20">
-                    <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
-                </div>
+                <PageSkeleton rows={8} cols={4} />
             ) : pos.length === 0 ? (
                 <Card>
                     <CardContent className="py-16 text-center text-muted-foreground">

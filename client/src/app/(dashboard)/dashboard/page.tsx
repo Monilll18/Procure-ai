@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useCachedFetch } from "@/hooks/useCachedFetch";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { getDashboardStats, type DashboardStats, getInsights, type Insight } from "@/lib/api";
 import { useRBAC } from "@/lib/rbac";
+import { DashboardSkeleton } from "@/components/ui/skeletons";
 
 // ─── Role-Specific Config ───────────────────────────────────────
 
@@ -132,30 +134,33 @@ const STATUS_LABELS: Record<string, string> = {
 export default function DashboardPage() {
     const router = useRouter();
     const { role, profile, loading: rbacLoading } = useRBAC();
-    const [stats, setStats] = useState<DashboardStats | null>(null);
-    const [insights, setInsights] = useState<Insight[]>([]);
-    const [loading, setLoading] = useState(true);
 
+    // Compute config before hooks so the insights fetcher can reference it
     const config = ROLE_CONFIGS[role] || ROLE_CONFIGS.viewer;
     const RoleIcon = config.icon;
 
-    useEffect(() => {
-        Promise.all([
-            getDashboardStats(),
-            config.showAIInsights ? getInsights().catch(() => []) : Promise.resolve([]),
-        ])
-            .then(([s, ins]) => { setStats(s); setInsights(ins as Insight[]); })
-            .catch(console.error)
-            .finally(() => setLoading(false));
-    }, [config.showAIInsights]);
+    const {
+        data: stats,
+        loading: statsLoading,
+    } = useCachedFetch<DashboardStats>({
+        cacheKey: "/api/__dashboard_stats",
+        fetcher: getDashboardStats,
+    });
+
+    const {
+        data: insightsRaw,
+        loading: insightsLoading,
+    } = useCachedFetch<Insight[]>({
+        cacheKey: "/api/insights/",
+        fetcher: () => config.showAIInsights ? getInsights().catch(() => []) : Promise.resolve([]),
+        deps: [config.showAIInsights],
+    });
+    const insights: Insight[] = insightsRaw ?? [];
+
+    const loading = statsLoading || insightsLoading;
 
     if (loading || rbacLoading) {
-        return (
-            <div className="flex items-center justify-center min-h-[60vh]">
-                <Loader2 className="h-10 w-10 animate-spin text-primary" />
-                <span className="ml-4 text-muted-foreground text-lg">Loading dashboard...</span>
-            </div>
-        );
+        return <DashboardSkeleton />;
     }
 
     if (!stats) {
@@ -287,18 +292,37 @@ export default function DashboardPage() {
                             <div className="h-[300px] w-full">
                                 {spendData.length > 0 ? (
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={spendData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                        <AreaChart data={spendData} margin={{ top: 20, right: 20, left: 0, bottom: 0 }}>
                                             <defs>
                                                 <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
                                                     <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
                                                     <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                                                 </linearGradient>
                                             </defs>
-                                            <XAxis dataKey="name" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} />
-                                            <YAxis stroke="#888888" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => `$${v}`} />
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                                            <Tooltip contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }} />
-                                            <Area type="monotone" dataKey="total" stroke="hsl(var(--primary))" strokeWidth={2} fillOpacity={1} fill="url(#colorTotal)" />
+                                            <XAxis 
+                                                dataKey="name" 
+                                                stroke="hsl(var(--muted-foreground))" 
+                                                fontSize={12} 
+                                                tickLine={false} 
+                                                axisLine={false} 
+                                                dy={10}
+                                            />
+                                            <YAxis 
+                                                stroke="hsl(var(--muted-foreground))" 
+                                                fontSize={12} 
+                                                tickLine={false} 
+                                                axisLine={false} 
+                                                tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} 
+                                                dx={-10}
+                                            />
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" opacity={0.5} />
+                                            <Tooltip 
+                                                contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--popover-foreground))', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                                itemStyle={{ color: 'hsl(var(--primary))', fontWeight: 600 }}
+                                                formatter={(value: number) => [`$${value.toLocaleString()}`, "Spend"]}
+                                                labelStyle={{ color: 'hsl(var(--muted-foreground))', marginBottom: '4px' }}
+                                            />
+                                            <Area type="monotone" dataKey="total" stroke="hsl(var(--primary))" strokeWidth={3} fillOpacity={1} fill="url(#colorTotal)" activeDot={{ r: 6, fill: "hsl(var(--primary))", stroke: "hsl(var(--background))", strokeWidth: 2 }} />
                                         </AreaChart>
                                     </ResponsiveContainer>
                                 ) : (
@@ -317,11 +341,33 @@ export default function DashboardPage() {
                             <div className="h-[300px] w-full">
                                 {supplierData.length > 0 ? (
                                     <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={supplierData} layout="vertical" margin={{ top: 0, right: 0, left: 40, bottom: 0 }}>
-                                            <XAxis type="number" hide />
-                                            <YAxis dataKey="name" type="category" stroke="#888888" fontSize={12} tickLine={false} axisLine={false} width={100} />
-                                            <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }} />
-                                            <Bar dataKey="spend" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} barSize={32} />
+                                        <BarChart data={supplierData} layout="vertical" margin={{ top: 10, right: 30, left: 40, bottom: 0 }} barSize={16}>
+                                            <XAxis 
+                                                type="number" 
+                                                hide 
+                                            />
+                                            <YAxis 
+                                                dataKey="name" 
+                                                type="category" 
+                                                stroke="hsl(var(--muted-foreground))" 
+                                                fontSize={12} 
+                                                tickLine={false} 
+                                                axisLine={false} 
+                                                width={90}
+                                            />
+                                            <Tooltip 
+                                                cursor={{ fill: 'hsl(var(--muted))', opacity: 0.4 }} 
+                                                contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--popover-foreground))', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                                itemStyle={{ color: 'hsl(var(--primary))', fontWeight: 600 }}
+                                                formatter={(value: number) => [`$${value.toLocaleString()}`, "Spend"]}
+                                                labelStyle={{ display: 'none' }}
+                                            />
+                                            <Bar 
+                                                dataKey="spend" 
+                                                fill="hsl(var(--primary))" 
+                                                radius={[0, 4, 4, 0]} 
+                                                background={{ fill: 'hsl(var(--secondary))', radius: [0, 4, 4, 0] }}
+                                            />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 ) : (

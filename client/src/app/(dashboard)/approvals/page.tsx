@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useCachedFetch } from "@/hooks/useCachedFetch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check, X, Clock, Loader2, FileText, ShoppingCart, ArrowUpRight } from "lucide-react";
+import { DoubleConfirmButton, MorphingSubmitButton } from "@/components/ui/animated-buttons";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -14,42 +16,40 @@ import {
 } from "@/lib/api";
 import { useAuth } from "@clerk/nextjs";
 import { useRBAC } from "@/lib/rbac";
+import { toast } from "sonner";
+import { PageSkeleton } from "@/components/ui/skeletons";
 
 export default function ApprovalsPage() {
-    const [pendingPOs, setPendingPOs] = useState<PurchaseOrder[]>([]);
-    const [pendingPRs, setPendingPRs] = useState<PurchaseRequisition[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [actionLoading, setActionLoading] = useState<string | null>(null);
     const { getToken } = useAuth();
     const { can } = useRBAC();
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-    const loadData = async () => {
-        setLoading(true);
-        try {
-            const [pos, prs] = await Promise.all([
-                getPurchaseOrders("pending_approval"),
-                getRequisitions(),
-            ]);
-            setPendingPOs(pos);
-            // Show PRs that are submitted or under_review
-            setPendingPRs(prs.filter(pr => pr.status === "submitted" || pr.status === "under_review"));
-        } catch (e) {
-            console.error("Failed to load approvals:", e);
-        } finally {
-            setLoading(false);
-        }
-    };
+    const { data: allPOs, refresh: refreshPOs } = useCachedFetch<PurchaseOrder[]>({
+        cacheKey: "/api/purchase-orders/?status=pending_approval",
+        fetcher: () => getPurchaseOrders("pending_approval"),
+    });
+    const { data: allPRs, loading, refresh: refreshPRs } = useCachedFetch<PurchaseRequisition[]>({
+        cacheKey: "/api/requisitions/",
+        fetcher: getRequisitions,
+    });
 
-    useEffect(() => { loadData(); }, []);
+    const pendingPOs: PurchaseOrder[] = allPOs ?? [];
+    const pendingPRs: PurchaseRequisition[] = (allPRs ?? []).filter(
+        (pr) => pr.status === "submitted" || pr.status === "under_review"
+    );
+
+    const loadData = () => { refreshPOs(); refreshPRs(); };
 
     const handleApprovePO = async (poId: string) => {
         try {
             setActionLoading(poId);
             const token = await getToken();
             await approvePO(poId, token || "");
-            setPendingPOs((prev) => prev.filter((po) => po.id !== poId));
-        } catch (error) {
+            loadData();
+            toast.success("Purchase order approved");
+        } catch (error: any) {
             console.error("Failed to approve:", error);
+            toast.error(error.message || "Failed to approve PO");
         } finally {
             setActionLoading(null);
         }
@@ -60,9 +60,11 @@ export default function ApprovalsPage() {
             setActionLoading(poId);
             const token = await getToken();
             await rejectPO(poId, token || "");
-            setPendingPOs((prev) => prev.filter((po) => po.id !== poId));
-        } catch (error) {
+            loadData();
+            toast.success("Purchase order rejected");
+        } catch (error: any) {
             console.error("Failed to reject:", error);
+            toast.error(error.message || "Failed to reject PO");
         } finally {
             setActionLoading(null);
         }
@@ -73,10 +75,11 @@ export default function ApprovalsPage() {
             setActionLoading(prId);
             const token = await getToken();
             await approveRequisition(prId, token);
-            setPendingPRs((prev) => prev.filter((pr) => pr.id !== prId));
+            loadData();
+            toast.success("Requisition approved");
         } catch (error: any) {
             console.error("Failed to approve PR:", error);
-            alert(error.message || "Failed to approve");
+            toast.error(error.message || "Failed to approve");
         } finally {
             setActionLoading(null);
         }
@@ -87,10 +90,11 @@ export default function ApprovalsPage() {
             setActionLoading(prId);
             const token = await getToken();
             await rejectRequisition(prId, "Rejected from approvals page", token);
-            setPendingPRs((prev) => prev.filter((pr) => pr.id !== prId));
+            loadData();
+            toast.success("Requisition rejected");
         } catch (error: any) {
             console.error("Failed to reject PR:", error);
-            alert(error.message || "Failed to reject");
+            toast.error(error.message || "Failed to reject");
         } finally {
             setActionLoading(null);
         }
@@ -99,25 +103,21 @@ export default function ApprovalsPage() {
     const totalPending = pendingPRs.length + pendingPOs.length;
 
     if (loading) {
-        return (
-            <div className="flex items-center justify-center min-h-[60vh]">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-        );
+        return <PageSkeleton rows={4} cols={4} />;
     }
 
     return (
         <div className="space-y-6">
             <div>
                 <h2 className="text-3xl font-bold tracking-tight">Approvals</h2>
-                <p className="text-muted-foreground">
+                <div className="text-muted-foreground">
                     Review and approve purchase requisitions and orders.
                     {totalPending > 0 && (
                         <Badge variant="destructive" className="ml-2 align-middle">
                             {totalPending} pending
                         </Badge>
                     )}
-                </p>
+                </div>
             </div>
 
             {totalPending === 0 ? (
@@ -203,26 +203,21 @@ export default function ApprovalsPage() {
                                         <CardFooter className="flex gap-3 border-t bg-gray-50/50 dark:bg-gray-900/50 p-4">
                                             {can("approve_pr") ? (
                                                 <>
-                                                    <Button
-                                                        variant="outline"
-                                                        className="flex-1 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                                                        onClick={() => handleRejectPR(pr.id)}
-                                                        disabled={actionLoading === pr.id}
-                                                    >
-                                                        <X className="w-4 h-4 mr-2" /> Reject
-                                                    </Button>
-                                                    <Button
-                                                        className="flex-1 bg-emerald-600 hover:bg-emerald-700"
-                                                        onClick={() => handleApprovePR(pr.id)}
-                                                        disabled={actionLoading === pr.id}
-                                                    >
-                                                        {actionLoading === pr.id ? (
-                                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                                        ) : (
-                                                            <Check className="w-4 h-4 mr-2" />
-                                                        )}
-                                                        Approve
-                                                    </Button>
+                                                    <DoubleConfirmButton
+                                                        idleText="Reject"
+                                                        idleIcon={X}
+                                                        idleClasses="bg-white text-black hover:bg-zinc-100 border border-zinc-200 dark:bg-[#252837] dark:text-[#d1d5db] dark:border-[#2e3347] flex-1 w-full"
+                                                        confirmClasses="bg-red-500/10 text-red-500 border border-red-500/50 flex-1 w-full"
+                                                        successClasses="bg-red-500 text-white flex-1 w-full"
+                                                        onConfirm={() => handleRejectPR(pr.id)}
+                                                    />
+                                                    <MorphingSubmitButton
+                                                        idleText="Approve"
+                                                        idleIcon={Check}
+                                                        variant="success"
+                                                        className="flex-1 w-full"
+                                                        onAction={() => handleApprovePR(pr.id)}
+                                                    />
                                                 </>
                                             ) : (
                                                 <p className="text-sm text-muted-foreground w-full text-center">
@@ -292,26 +287,21 @@ export default function ApprovalsPage() {
                                         <CardFooter className="flex gap-3 border-t bg-gray-50/50 dark:bg-gray-900/50 p-4">
                                             {can("approve_po") ? (
                                                 <>
-                                                    <Button
-                                                        variant="outline"
-                                                        className="flex-1 hover:bg-red-50 hover:text-red-600 hover:border-red-200"
-                                                        onClick={() => handleRejectPO(po.id)}
-                                                        disabled={actionLoading === po.id}
-                                                    >
-                                                        <X className="w-4 h-4 mr-2" /> Reject
-                                                    </Button>
-                                                    <Button
-                                                        className="flex-1 bg-purple-600 hover:bg-purple-700"
-                                                        onClick={() => handleApprovePO(po.id)}
-                                                        disabled={actionLoading === po.id}
-                                                    >
-                                                        {actionLoading === po.id ? (
-                                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                                        ) : (
-                                                            <Check className="w-4 h-4 mr-2" />
-                                                        )}
-                                                        Approve
-                                                    </Button>
+                                                    <DoubleConfirmButton
+                                                        idleText="Reject"
+                                                        idleIcon={X}
+                                                        idleClasses="bg-white text-black hover:bg-zinc-100 border border-zinc-200 dark:bg-[#252837] dark:text-[#d1d5db] dark:border-[#2e3347] flex-1 w-full"
+                                                        confirmClasses="bg-red-500/10 text-red-500 border border-red-500/50 flex-1 w-full"
+                                                        successClasses="bg-red-500 text-white flex-1 w-full"
+                                                        onConfirm={() => handleRejectPO(po.id)}
+                                                    />
+                                                    <MorphingSubmitButton
+                                                        idleText="Approve"
+                                                        idleIcon={Check}
+                                                        variant="purple"
+                                                        className="flex-1 w-full"
+                                                        onAction={() => handleApprovePO(po.id)}
+                                                    />
                                                 </>
                                             ) : (
                                                 <p className="text-sm text-muted-foreground w-full text-center">

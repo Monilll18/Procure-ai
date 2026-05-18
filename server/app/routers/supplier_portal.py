@@ -20,11 +20,15 @@ from app.models.supplier_price_update import SupplierPriceUpdate, PriceUpdateSta
 from app.models.supplier_invoice import SupplierInvoice, InvoiceLineItem, InvoiceStatus
 from app.models.product import Product
 from app.middleware.supplier_auth import get_current_supplier_user
+from app.services.ai_chat import chat_with_assistant
 
 router = APIRouter()
 
 
 # ─── Schemas ──────────────────────────────────────────────────
+
+class ChatRequest(BaseModel):
+    question: str
 
 class AcceptPORequest(BaseModel):
     notes: Optional[str] = None
@@ -1171,3 +1175,25 @@ async def download_invoice_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{inv.invoice_number}.pdf"'},
     )
+
+
+# ─── AI Chat ──────────────────────────────────────────────────
+
+@router.post("/chat")
+async def supplier_ai_chat(
+    data: ChatRequest,
+    db: Session = Depends(get_db),
+    supplier_user: dict = Depends(get_current_supplier_user),
+):
+    """
+    RAG-powered AI chat for Suppliers.
+    Enforces strict data isolation using supplier_id from session.
+    """
+    result = await chat_with_assistant(
+        question=data.question,
+        db=db,
+        user_name=supplier_user["full_name"] or "Supplier",
+        user_role="supplier",
+        supplier_id=supplier_user["supplier_id"],
+    )
+    return result

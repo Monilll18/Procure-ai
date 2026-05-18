@@ -418,3 +418,8 @@ export const downloadInvoicePdf = async (id: string, filename: string = "invoice
     a.click();
     URL.revokeObjectURL(url);
 };
+export const supplierAiChat = (question: string) =>
+    supplierFetch<any>("/api/supplier-portal/chat", {
+        method: "POST",
+        body: JSON.stringify({ question }),
+    });

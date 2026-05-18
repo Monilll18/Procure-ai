@@ -7,6 +7,7 @@ from app.database import get_db
 from app.models.product import Product
 from app.schemas.product import ProductCreate, ProductUpdate, ProductResponse
 from app.middleware.auth import get_current_user
+from app.services.cache import cache, TTL_LIST
 
 router = APIRouter()
 
@@ -19,20 +20,34 @@ async def list_products(
     db: Session = Depends(get_db),
 ):
     """List all products with optional category filter."""
+    cache_key = f"products:list:{skip}:{limit}:{category or 'all'}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     query = db.query(Product)
     if category:
         query = query.filter(Product.category == category)
     products = query.offset(skip).limit(limit).all()
-    return products
+    result = [ProductResponse.model_validate(p).model_dump(mode="json") for p in products]
+    cache.set(cache_key, result, TTL_LIST)
+    return result
 
 
 @router.get("/{product_id}", response_model=ProductResponse)
 async def get_product(product_id: UUID, db: Session = Depends(get_db)):
     """Get a single product by ID."""
+    cache_key = f"products:single:{product_id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     product = db.query(Product).filter(Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    return product
+    result = ProductResponse.model_validate(product).model_dump(mode="json")
+    cache.set(cache_key, result, TTL_LIST)
+    return result
 
 
 @router.post("/", response_model=ProductResponse, status_code=201)
@@ -42,7 +57,6 @@ async def create_product(
     user_id: str = Depends(get_current_user),
 ):
     """Create a new product (requires auth)."""
-    # Check if SKU already exists
     existing = db.query(Product).filter(Product.sku == product_data.sku).first()
     if existing:
         raise HTTPException(status_code=400, detail=f"Product with SKU '{product_data.sku}' already exists")
@@ -51,6 +65,8 @@ async def create_product(
     db.add(product)
     db.commit()
     db.refresh(product)
+    # Invalidate all product lists so next read fetches fresh data
+    cache.invalidate_pattern("products:*")
     return product
 
 
@@ -72,6 +88,7 @@ async def update_product(
 
     db.commit()
     db.refresh(product)
+    cache.invalidate_pattern("products:*")
     return product
 
 
@@ -88,3 +105,4 @@ async def delete_product(
 
     db.delete(product)
     db.commit()
+    cache.invalidate_pattern("products:*")

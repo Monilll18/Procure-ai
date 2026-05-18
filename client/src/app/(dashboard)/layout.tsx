@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Sidebar } from "@/components/Sidebar";
 import { Topbar } from "@/components/Topbar";
-import { ThemeSelector } from "@/components/ThemeSelector";
+
 import { DashboardShell } from "@/components/DashboardShell";
 
 export const metadata: Metadata = {
@@ -16,7 +16,7 @@ export default function DashboardLayout({
 }>) {
     return (
         <DashboardShell>
-            <div className="flex min-h-screen bg-muted/30 text-foreground">
+            <div className="flex min-h-screen bg-background text-foreground font-['DM_Sans',sans-serif]">
                 {/* Sidebar */}
                 <Sidebar />
 
@@ -26,12 +26,10 @@ export default function DashboardLayout({
                     <Topbar />
 
                     {/* Page Content */}
-                    <main className="flex-1 overflow-y-auto p-4 md:p-8 scrollbar-hide">
+                    <main className="flex-1 overflow-y-auto p-[24px]">
                         {children}
                     </main>
 
-                    {/* Floating Theme Selector */}
-                    <ThemeSelector />
                 </div>
             </div>
         </DashboardShell>

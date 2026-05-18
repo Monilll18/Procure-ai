@@ -13,6 +13,7 @@ import {
     getSupplierDashboard, getSupplierPOs,
     type DashboardData, type SupplierPO,
 } from "@/lib/supplier-api";
+import { DashboardSkeleton } from "@/components/ui/skeletons";
 
 const STATUS_COLORS: Record<string, string> = {
     sent: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
@@ -48,11 +49,7 @@ export default function SupplierDashboardPage() {
     useEffect(() => { load(); }, []);
 
     if (loading || !dashboard) {
-        return (
-            <div className="flex items-center justify-center py-20">
-                <Loader2 className="h-8 w-8 animate-spin text-violet-500" />
-            </div>
-        );
+        return <DashboardSkeleton />;
     }
 
     const stats = dashboard.stats;

@@ -1,179 +1,200 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Loader2, ShieldCheck, Lock, CheckCircle } from "lucide-react";
-import {
-    supplierActivate, setSupplierToken, setStoredSupplierUser,
-} from "@/lib/supplier-api";
+import { Separator } from "@/components/ui/separator";
+import { Loader2, ShieldCheck, Lock, CheckCircle, ArrowLeft } from "lucide-react";
+import { supplierActivate, setSupplierToken, setStoredSupplierUser } from "@/lib/supplier-api";
 
 interface Props {
-    token: string;
-    isChangePassword: boolean;
+  token: string;
+  isChangePassword: boolean;
 }
 
 export function SupplierActivateContent({ token, isChangePassword }: Props) {
-    const router = useRouter();
-    const [newPassword, setNewPassword] = useState("");
-    const [confirmPassword, setConfirmPassword] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
-    const [success, setSuccess] = useState(false);
+  const router = useRouter();
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
 
-    const handleActivate = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setError("");
-
-        if (newPassword.length < 8) {
-            setError("Password must be at least 8 characters");
-            return;
-        }
-        if (newPassword !== confirmPassword) {
-            setError("Passwords do not match");
-            return;
-        }
-
-        setLoading(true);
-        try {
-            const res = await supplierActivate(token, newPassword);
-            setSupplierToken(res.access_token);
-            setStoredSupplierUser(res.user);
-            setSuccess(true);
-
-            setTimeout(() => {
-                router.push("/supplier-portal/dashboard");
-            }, 1500);
-        } catch (err: any) {
-            setError(err.message || "Activation failed");
-        } finally {
-            setLoading(false);
-        }
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    const setSize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
     };
+    setSize();
+    type P = { x: number; y: number; v: number; o: number };
+    let ps: P[] = [];
+    let raf = 0;
+    const make = () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      v: Math.random() * 0.25 + 0.05,
+      o: Math.random() * 0.35 + 0.15,
+    });
+    const init = () => {
+      ps = [];
+      const count = Math.floor((canvas.width * canvas.height) / 9000);
+      for (let i = 0; i < count; i++) ps.push(make());
+    };
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ps.forEach((p) => {
+        p.y -= p.v;
+        if (p.y < 0) {
+          p.x = Math.random() * canvas.width;
+          p.y = canvas.height + Math.random() * 40;
+          p.v = Math.random() * 0.25 + 0.05;
+          p.o = Math.random() * 0.35 + 0.15;
+        }
+        ctx.fillStyle = `rgba(250,250,250,${p.o})`;
+        ctx.fillRect(p.x, p.y, 0.7, 2.2);
+      });
+      raf = requestAnimationFrame(draw);
+    };
+    window.addEventListener("resize", () => { setSize(); init(); });
+    init();
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
-    if (!token && !isChangePassword) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-violet-950 via-gray-900 to-black p-4">
-                <Card className="w-full max-w-md border-white/10 bg-white/5 backdrop-blur-xl">
-                    <CardContent className="py-12 text-center">
-                        <ShieldCheck className="h-12 w-12 mx-auto mb-4 text-violet-400 opacity-50" />
-                        <p className="text-white font-semibold">No activation token found</p>
-                        <p className="text-gray-400 text-sm mt-2">
-                            Check your invitation email for the correct activation link.
-                        </p>
-                        <Button
-                            variant="outline"
-                            className="mt-4 border-white/10 text-gray-300 hover:bg-white/5"
-                            onClick={() => router.push("/supplier-portal/login")}
-                        >
-                            Go to Login
-                        </Button>
-                    </CardContent>
-                </Card>
-            </div>
-        );
+  const handleActivate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (newPassword.length < 8) { setError("Min 8 characters required"); return; }
+    if (newPassword !== confirmPassword) { setError("Passwords mismatch"); return; }
+    setLoading(true);
+    try {
+      const res = await supplierActivate(token, newPassword);
+      setSupplierToken(res.access_token);
+      setStoredSupplierUser(res.user);
+      setSuccess(true);
+      setTimeout(() => router.push("/supplier-portal/dashboard"), 1500);
+    } catch (err: any) {
+      setError(err.message || "Activation failed");
+    } finally {
+      setLoading(false);
     }
+  };
 
+  if (!token && !isChangePassword) {
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-violet-950 via-gray-900 to-black p-4">
-            <div className="w-full max-w-md space-y-6">
-                <div className="text-center space-y-2">
-                    <div className="mx-auto h-14 w-14 rounded-2xl bg-violet-600 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-violet-500/30">
-                        SP
-                    </div>
-                    <h1 className="text-2xl font-bold text-white">
-                        {isChangePassword ? "Set New Password" : "Activate Account"}
-                    </h1>
-                    <p className="text-violet-300/70 text-sm">
-                        {isChangePassword
-                            ? "You must set a new password before continuing"
-                            : "Create a secure password for your supplier portal"}
-                    </p>
+      <div className="fixed inset-0 bg-zinc-950 text-zinc-50 flex items-center justify-center p-4">
+        <Card className="w-full max-w-sm border-zinc-800 bg-zinc-900/80 backdrop-blur-xl relative z-10">
+          <CardContent className="py-12 text-center space-y-4">
+            <ShieldCheck className="h-12 w-12 mx-auto text-zinc-600" />
+            <p className="font-bold text-zinc-50">Invalid Activation</p>
+            <p className="text-zinc-400 text-xs">Missing token or expired link.</p>
+            <Button variant="outline" className="w-full border-zinc-800 bg-zinc-900 text-zinc-50" onClick={() => router.push("/supplier-portal/login")}>Back to Login</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <section className="fixed inset-0 bg-zinc-950 text-zinc-50 overflow-hidden">
+      <style>{`
+        .accent-lines{position:absolute;inset:0;pointer-events:none;opacity:.7}
+        .hline,.vline{position:absolute;background:#27272a;will-change:transform,opacity}
+        .hline{left:0;right:0;height:1px;transform:scaleX(0);transform-origin:50% 50%;animation:drawX .8s cubic-bezier(.22,.61,.36,1) forwards}
+        .vline{top:0;bottom:0;width:1px;transform:scaleY(0);transform-origin:50% 0%;animation:drawY .9s cubic-bezier(.22,.61,.36,1) forwards}
+        .hline:nth-child(1){top:18%;animation-delay:.12s}
+        .hline:nth-child(2){top:50%;animation-delay:.22s}
+        .hline:nth-child(3){top:82%;animation-delay:.32s}
+        .vline:nth-child(4){left:22%;animation-delay:.42s}
+        .vline:nth-child(5){left:50%;animation-delay:.54s}
+        .vline:nth-child(6){left:78%;animation-delay:.66s}
+        @keyframes drawX{0%{transform:scaleX(0);opacity:0}60%{opacity:.95}100%{transform:scaleX(1);opacity:.7}}
+        @keyframes drawY{0%{transform:scaleY(0);opacity:0}60%{opacity:.95}100%{transform:scaleY(1);opacity:.7}}
+        .card-animate { opacity: 0; transform: translateY(20px); animation: fadeUp 0.8s cubic-bezier(.22,.61,.36,1) 0.4s forwards; }
+        @keyframes fadeUp { to { opacity: 1; transform: translateY(0); } }
+      `}</style>
+
+      <div className="absolute inset-0 pointer-events-none [background:radial-gradient(80%_60%_at_50%_30%,rgba(255,255,255,0.06),transparent_60%)]" />
+      <div className="accent-lines">
+        <div className="hline" /> <div className="hline" /> <div className="hline" />
+        <div className="vline" /> <div className="vline" /> <div className="vline" />
+      </div>
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full opacity-50 mix-blend-screen pointer-events-none" />
+
+      <header className="absolute left-0 right-0 top-0 flex items-center justify-between px-6 py-4 border-b border-zinc-800/80 z-20">
+        <span className="text-xs tracking-[0.14em] uppercase text-zinc-400 font-bold">PROCURE AI</span>
+        <Button variant="outline" className="h-9 rounded-lg border-zinc-800 bg-zinc-900 text-zinc-50" onClick={() => router.push("/supplier-portal/login")}>
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          <span>Login</span>
+        </Button>
+      </header>
+
+      <div className="h-full w-full grid place-items-center px-4 relative z-10">
+        <Card className="card-animate w-full max-w-sm border-zinc-800 bg-zinc-900/80 backdrop-blur-xl shadow-2xl relative z-30">
+          <CardHeader className="space-y-1.5 pb-6">
+            <CardTitle className="text-2xl font-bold text-zinc-50 tracking-tight">
+              {isChangePassword ? "Security Update" : "Account Activation"}
+            </CardTitle>
+            <CardDescription className="text-zinc-400 font-medium text-sm">
+              {isChangePassword ? "Reset password to continue" : "Set password to activate portal"}
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="grid gap-6">
+            {success ? (
+              <div className="text-center py-6">
+                <CheckCircle className="h-16 w-16 text-zinc-50 mx-auto mb-4" />
+                <p className="text-zinc-50 font-bold">Activated!</p>
+                <p className="text-zinc-400 text-xs mt-2">Redirecting to dashboard...</p>
+              </div>
+            ) : (
+              <form onSubmit={handleActivate} className="grid gap-6">
+                <div className="grid gap-2.5">
+                  <Label htmlFor="new-password" className="text-zinc-300 font-semibold text-xs uppercase tracking-wider ml-1">New Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                    <Input id="new-password" type="password" placeholder="Min 8 characters" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} className="pl-11 bg-zinc-950 border-zinc-800 text-zinc-50 placeholder:text-zinc-700 h-11 rounded-xl" />
+                  </div>
                 </div>
 
-                <Card className="border-white/10 bg-white/5 backdrop-blur-xl shadow-2xl">
-                    <CardContent className="pt-6">
-                        {success ? (
-                            <div className="text-center py-6 space-y-3">
-                                <CheckCircle className="h-12 w-12 mx-auto text-green-400" />
-                                <p className="text-white font-semibold text-lg">Account Activated!</p>
-                                <p className="text-gray-400 text-sm">Redirecting to dashboard...</p>
-                            </div>
-                        ) : (
-                            <form onSubmit={handleActivate} className="space-y-4">
-                                <div className="space-y-2">
-                                    <Label htmlFor="new-password" className="text-gray-300">New Password</Label>
-                                    <div className="relative">
-                                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-                                        <Input
-                                            id="new-password"
-                                            type="password"
-                                            placeholder="At least 8 characters"
-                                            value={newPassword}
-                                            onChange={(e) => setNewPassword(e.target.value)}
-                                            required
-                                            minLength={8}
-                                            className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-gray-500 focus:border-violet-500"
-                                        />
-                                    </div>
-                                </div>
+                <div className="grid gap-2.5">
+                  <Label htmlFor="confirm-password" className="text-zinc-300 font-semibold text-xs uppercase tracking-wider ml-1">Confirm Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                    <Input id="confirm-password" type="password" placeholder="Re-enter password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={8} className="pl-11 bg-zinc-950 border-zinc-800 text-zinc-50 placeholder:text-zinc-700 h-11 rounded-xl" />
+                  </div>
+                </div>
 
-                                <div className="space-y-2">
-                                    <Label htmlFor="confirm-password" className="text-gray-300">Confirm Password</Label>
-                                    <div className="relative">
-                                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
-                                        <Input
-                                            id="confirm-password"
-                                            type="password"
-                                            placeholder="Re-enter password"
-                                            value={confirmPassword}
-                                            onChange={(e) => setConfirmPassword(e.target.value)}
-                                            required
-                                            className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-gray-500 focus:border-violet-500"
-                                        />
-                                    </div>
-                                </div>
+                {error && <div className="px-4 py-2 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-[10px] font-bold text-center uppercase tracking-wider">{error}</div>}
 
-                                <div className="text-xs text-gray-500 space-y-1">
-                                    <p className={newPassword.length >= 8 ? "text-green-400" : ""}>
-                                        {newPassword.length >= 8 ? "✓" : "○"} At least 8 characters
-                                    </p>
-                                    <p className={newPassword === confirmPassword && newPassword.length > 0 ? "text-green-400" : ""}>
-                                        {newPassword === confirmPassword && newPassword.length > 0 ? "✓" : "○"} Passwords match
-                                    </p>
-                                </div>
+                <Button type="submit" disabled={loading} className="w-full h-11 rounded-xl bg-zinc-50 text-zinc-950 hover:bg-zinc-200 font-bold shadow-lg active:scale-[0.98]">
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Activate Account"}
+                </Button>
+              </form>
+            )}
 
-                                {error && (
-                                    <div className="px-3 py-2 rounded-md bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                                        {error}
-                                    </div>
-                                )}
-
-                                <Button
-                                    type="submit"
-                                    className="w-full bg-violet-600 hover:bg-violet-700 text-white shadow-lg shadow-violet-500/20"
-                                    disabled={loading}
-                                >
-                                    {loading ? (
-                                        <>
-                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                            Activating...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <ShieldCheck className="mr-2 h-4 w-4" />
-                                            Activate & Continue
-                                        </>
-                                    )}
-                                </Button>
-                            </form>
-                        )}
-                    </CardContent>
-                </Card>
+            <div className="relative py-2">
+              <Separator className="bg-zinc-800" />
+              <span className="absolute left-1/2 -translate-x-1/2 -top-1.5 bg-zinc-900 px-3 text-[10px] uppercase tracking-widest text-zinc-600 font-black">OR</span>
             </div>
-        </div>
-    );
+
+            <div className="grid gap-3 pt-1">
+              <a href="/supplier-portal/login" className="text-xs font-semibold text-zinc-400 hover:text-zinc-50 flex items-center gap-2">
+                <div className="h-1 w-1 rounded-full bg-zinc-600" /> Already activated? Login
+              </a>
+            </div>
+          </CardContent>
+
+          <CardFooter className="flex items-center justify-center text-[10px] text-zinc-600 pb-8 uppercase tracking-[0.2em] font-bold">Secure Authentication Portal</CardFooter>
+        </Card>
+      </div>
+    </section>
+  );
 }
