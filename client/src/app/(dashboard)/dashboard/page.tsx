@@ -319,7 +319,7 @@ export default function DashboardPage() {
                                             <Tooltip 
                                                 contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--popover-foreground))', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                                                 itemStyle={{ color: 'hsl(var(--primary))', fontWeight: 600 }}
-                                                formatter={(value: number) => [`$${value.toLocaleString()}`, "Spend"]}
+                                                formatter={(value: any) => [`$${Number(value).toLocaleString()}`, "Spend"]}
                                                 labelStyle={{ color: 'hsl(var(--muted-foreground))', marginBottom: '4px' }}
                                             />
                                             <Area type="monotone" dataKey="total" stroke="hsl(var(--primary))" strokeWidth={3} fillOpacity={1} fill="url(#colorTotal)" activeDot={{ r: 6, fill: "hsl(var(--primary))", stroke: "hsl(var(--background))", strokeWidth: 2 }} />
@@ -359,7 +359,7 @@ export default function DashboardPage() {
                                                 cursor={{ fill: 'hsl(var(--muted))', opacity: 0.4 }} 
                                                 contentStyle={{ backgroundColor: 'hsl(var(--popover))', borderColor: 'hsl(var(--border))', borderRadius: '8px', color: 'hsl(var(--popover-foreground))', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                                                 itemStyle={{ color: 'hsl(var(--primary))', fontWeight: 600 }}
-                                                formatter={(value: number) => [`$${value.toLocaleString()}`, "Spend"]}
+                                                formatter={(value: any) => [`$${Number(value).toLocaleString()}`, "Spend"]}
                                                 labelStyle={{ display: 'none' }}
                                             />
                                             <Bar 
